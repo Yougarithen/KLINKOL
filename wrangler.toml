@@ -1,0 +1,10 @@
+# Cloudflare Pages configuration
+name = "klinkol"
+compatibility_date = "2026-01-01"
+
+[build]
+command = "npm run build"
+output_dir = "dist"
+
+[site]
+bucket = "./dist"
