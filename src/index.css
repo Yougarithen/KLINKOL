@@ -1,0 +1,205 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Klinkol Industrial ERP Theme */
+    --background: 210 20% 98%;
+    --foreground: 220 25% 10%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 10%;
+
+    /* Klinkol Red */
+    --primary: 3 78% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 15% 93%;
+    --secondary-foreground: 220 25% 15%;
+
+    --muted: 210 15% 95%;
+    --muted-foreground: 215 12% 45%;
+
+    --accent: 3 78% 53%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 20% 88%;
+    --input: 214 20% 88%;
+    --ring: 3 78% 53%;
+
+    --radius: 0.625rem;
+
+    /* Sidebar - Dark industrial */
+    --sidebar-background: 220 20% 14%;
+    --sidebar-foreground: 210 15% 85%;
+    --sidebar-primary: 3 78% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 18% 20%;
+    --sidebar-accent-foreground: 210 15% 95%;
+    --sidebar-border: 220 15% 22%;
+    --sidebar-ring: 3 78% 53%;
+
+    /* Custom tokens */
+    --success: 142 72% 40%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    /* Chart colors */
+    --chart-1: 3 78% 53%;
+    --chart-2: 220 20% 45%;
+    --chart-3: 142 72% 40%;
+    --chart-4: 38 92% 50%;
+    --chart-5: 199 89% 48%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(3 78% 53%) 0%, hsl(3 78% 42%) 100%);
+    --gradient-sidebar: linear-gradient(180deg, hsl(220 20% 14%) 0%, hsl(220 25% 10%) 100%);
+    --gradient-card: linear-gradient(135deg, hsl(0 0% 100%) 0%, hsl(210 20% 98%) 100%);
+  }
+
+  .dark {
+    --background: 220 25% 8%;
+    --foreground: 210 15% 95%;
+
+    --card: 220 20% 12%;
+    --card-foreground: 210 15% 95%;
+
+    --popover: 220 20% 12%;
+    --popover-foreground: 210 15% 95%;
+
+    --primary: 3 78% 53%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 18% 18%;
+    --secondary-foreground: 210 15% 95%;
+
+    --muted: 220 18% 16%;
+    --muted-foreground: 215 12% 60%;
+
+    --accent: 220 18% 18%;
+    --accent-foreground: 210 15% 95%;
+
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 220 15% 20%;
+    --input: 220 15% 20%;
+    --ring: 3 78% 53%;
+
+    --sidebar-background: 220 25% 8%;
+    --sidebar-foreground: 210 15% 85%;
+    --sidebar-primary: 3 78% 53%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 220 18% 14%;
+    --sidebar-accent-foreground: 210 15% 95%;
+    --sidebar-border: 220 15% 16%;
+    --sidebar-ring: 3 78% 53%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  .glass-effect {
+    @apply bg-card/80 backdrop-blur-sm;
+  }
+
+  .stat-card {
+    @apply bg-card rounded-xl border border-border p-6 shadow-sm transition-all duration-300 hover:shadow-md hover:border-primary/20;
+  }
+
+  .table-header {
+    @apply bg-muted/50 text-muted-foreground font-semibold text-sm uppercase tracking-wider;
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-3 rounded-lg text-sidebar-foreground/80 transition-all duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground;
+  }
+/* Scrollbar custom pour le modal */
+.scrollbar-custom {
+  scrollbar-width: thin;          /* Firefox */
+  scrollbar-color: #a1a1aa #f4f4f5; /* thumb / track */
+}
+
+.scrollbar-custom::-webkit-scrollbar {
+  width: 8px;                     /* largeur de la scrollbar */
+}
+
+.scrollbar-custom::-webkit-scrollbar-track {
+  background: #f4f4f5;            /* couleur du track */
+  border-radius: 8px;             /* coins arrondis du track */
+}
+
+.scrollbar-custom::-webkit-scrollbar-thumb {
+  background-color: #a1a1aa;      /* couleur du thumb */
+  border-radius: 8px;             /* coins arrondis du thumb */
+  border: 2px solid #f4f4f5;      /* espace entre thumb et track */
+}
+
+  .sidebar-link-active {
+    @apply bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.4s ease-out;
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.3s ease-out;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
