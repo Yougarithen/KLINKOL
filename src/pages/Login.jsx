@@ -2,7 +2,8 @@
 import { useState } from "react";
 import { apiRequest } from "@/services/apiConfig";
 import { useNavigate, useLocation } from "react-router-dom";
-import Logo from "@/components/Logo";
+import KcimentImg from "@/assets/Kciment.jpg";
+import LogoImg from "@/assets/Logo.png";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -12,7 +13,6 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Message de session expirée depuis la navigation
   const sessionMessage = location.state?.message;
 
   const handleSubmit = async (e) => {
@@ -26,12 +26,10 @@ export default function Login() {
         body: JSON.stringify({ identifiant: email, mot_de_passe: password }),
       });
 
-      // Sauvegarde du token et des infos utilisateur
       localStorage.setItem("erp_auth_token", response.data.token);
       localStorage.setItem("erp_user_data", JSON.stringify(response.data.user));
       localStorage.setItem("erp_session_expires", response.data.expiresAt);
 
-      // Redirection vers le dashboard
       navigate("/clients");
     } catch (err) {
       setError(err.message || "Erreur de connexion");
@@ -44,56 +42,96 @@ export default function Login() {
     <div style={{
       minHeight: '100vh',
       display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #E53935 0%, #C62828 50%, #B71C1C 100%)',
-      padding: '1rem'
+      backgroundColor: '#FFFFFF'
     }}>
+      {/* Partie gauche - Logo KLINKOL en grand */}
       <div style={{
-        backgroundColor: 'white',
-        borderRadius: '16px',
-        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
-        overflow: 'hidden',
-        width: '100%',
-        maxWidth: '440px',
-        animation: 'slideIn 0.3s ease-out'
+        flex: '1',
+        background: 'linear-gradient(135deg, #E53935 0%, #C62828 50%, #B71C1C 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '3rem',
+        position: 'relative'
       }}>
-        {/* Header avec logo */}
         <div style={{
-          background: 'linear-gradient(135deg, #E53935 0%, #C62828 100%)',
-          padding: '3rem 2rem',
-          textAlign: 'center'
+          textAlign: 'center',
+          animation: 'fadeIn 0.6s ease-out'
         }}>
-          <Logo size="large" color="white" />
-          <p style={{
-            color: 'rgba(255, 255, 255, 0.9)',
-            fontSize: '0.95rem',
-            margin: '1rem 0 0 0'
+          <img 
+            src={LogoImg} 
+            alt="KLINKOL Logo"
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              height: 'auto',
+              filter: 'brightness(0) invert(1)',
+              marginBottom: '2rem'
+            }}
+          />
+          <div style={{
+            color: 'white',
+            fontSize: '1.5rem',
+            fontWeight: '300',
+            letterSpacing: '0.05em',
+            opacity: '0.95'
           }}>
             Système de Gestion ERP
-          </p>
+          </div>
         </div>
+      </div>
 
-        {/* Corps du formulaire */}
-        <div style={{ padding: '2.5rem 2rem' }}>
+      {/* Partie droite - Formulaire de connexion */}
+      <div style={{
+        flex: '1',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '2rem',
+        backgroundColor: '#F9FAFB'
+      }}>
+        <div style={{
+          width: '100%',
+          maxWidth: '420px',
+          animation: 'slideIn 0.4s ease-out'
+        }}>
+          {/* En-tête */}
+          <div style={{ marginBottom: '2.5rem' }}>
+            <h1 style={{
+              fontSize: '2rem',
+              fontWeight: '700',
+              color: '#1F2937',
+              marginBottom: '0.5rem'
+            }}>
+              Bienvenue
+            </h1>
+            <p style={{
+              fontSize: '1rem',
+              color: '#6B7280',
+              margin: 0
+            }}>
+              Connectez-vous à votre compte
+            </p>
+          </div>
+
           {/* Message de session expirée */}
           {sessionMessage && (
             <div style={{
-              backgroundColor: '#FEE2E2',
-              border: '1px solid #F87171',
-              borderRadius: '8px',
-              padding: '0.75rem 1rem',
+              backgroundColor: '#FEF2F2',
+              border: '1px solid #FCA5A5',
+              borderRadius: '12px',
+              padding: '1rem',
               marginBottom: '1.5rem',
               display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
+              alignItems: 'flex-start',
+              gap: '0.75rem',
               animation: 'slideDown 0.3s ease-out'
             }}>
-              <span style={{ fontSize: '1.25rem' }}>⏱️</span>
+              <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>⏱️</span>
               <span style={{ 
                 color: '#991B1B',
                 fontSize: '0.875rem',
-                fontWeight: '500'
+                lineHeight: '1.5'
               }}>
                 {sessionMessage}
               </span>
@@ -103,44 +141,39 @@ export default function Login() {
           {/* Message d'erreur */}
           {error && (
             <div style={{
-              backgroundColor: '#FEE2E2',
-              border: '1px solid #F87171',
-              borderRadius: '8px',
-              padding: '0.75rem 1rem',
+              backgroundColor: '#FEF2F2',
+              border: '1px solid #FCA5A5',
+              borderRadius: '12px',
+              padding: '1rem',
               marginBottom: '1.5rem',
               display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              animation: 'shake 0.3s ease-out'
+              alignItems: 'flex-start',
+              gap: '0.75rem',
+              animation: 'shake 0.4s ease-out'
             }}>
-              <span style={{ fontSize: '1.25rem' }}>❌</span>
+              <span style={{ fontSize: '1.25rem', lineHeight: 1 }}>❌</span>
               <span style={{ 
                 color: '#991B1B',
                 fontSize: '0.875rem',
-                fontWeight: '500'
+                lineHeight: '1.5'
               }}>
                 {error}
               </span>
             </div>
           )}
 
-          <h2 style={{
-            fontSize: '1.5rem',
-            fontWeight: '600',
-            color: '#1F2937',
-            marginBottom: '1.5rem',
-            textAlign: 'center'
+          <form onSubmit={handleSubmit} style={{
+            backgroundColor: 'white',
+            padding: '2rem',
+            borderRadius: '16px',
+            boxShadow: '0 4px 6px rgba(0, 0, 0, 0.05), 0 10px 15px rgba(0, 0, 0, 0.1)'
           }}>
-            Connexion
-          </h2>
-
-          <form onSubmit={handleSubmit}>
             {/* Champ Email */}
             <div style={{ marginBottom: '1.5rem' }}>
               <label style={{
                 display: 'block',
                 fontSize: '0.875rem',
-                fontWeight: '500',
+                fontWeight: '600',
                 color: '#374151',
                 marginBottom: '0.5rem'
               }}>
@@ -150,20 +183,29 @@ export default function Login() {
                 type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Entrez votre email"
+                placeholder="votreemail@exemple.com"
                 required
                 style={{
                   width: '100%',
-                  padding: '0.75rem 1rem',
+                  padding: '0.875rem 1rem',
                   border: '2px solid #E5E7EB',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   fontSize: '1rem',
                   transition: 'all 0.2s',
                   outline: 'none',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  backgroundColor: '#F9FAFB'
                 }}
-                onFocus={(e) => e.target.style.borderColor = '#E53935'}
-                onBlur={(e) => e.target.style.borderColor = '#E5E7EB'}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#E53935';
+                  e.target.style.backgroundColor = '#FFFFFF';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(229, 57, 53, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#E5E7EB';
+                  e.target.style.backgroundColor = '#F9FAFB';
+                  e.target.style.boxShadow = 'none';
+                }}
               />
             </div>
 
@@ -172,7 +214,7 @@ export default function Login() {
               <label style={{
                 display: 'block',
                 fontSize: '0.875rem',
-                fontWeight: '500',
+                fontWeight: '600',
                 color: '#374151',
                 marginBottom: '0.5rem'
               }}>
@@ -182,20 +224,29 @@ export default function Login() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Entrez votre mot de passe"
+                placeholder="••••••••"
                 required
                 style={{
                   width: '100%',
-                  padding: '0.75rem 1rem',
+                  padding: '0.875rem 1rem',
                   border: '2px solid #E5E7EB',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   fontSize: '1rem',
                   transition: 'all 0.2s',
                   outline: 'none',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  backgroundColor: '#F9FAFB'
                 }}
-                onFocus={(e) => e.target.style.borderColor = '#E53935'}
-                onBlur={(e) => e.target.style.borderColor = '#E5E7EB'}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#E53935';
+                  e.target.style.backgroundColor = '#FFFFFF';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(229, 57, 53, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#E5E7EB';
+                  e.target.style.backgroundColor = '#F9FAFB';
+                  e.target.style.boxShadow = 'none';
+                }}
               />
             </div>
 
@@ -205,23 +256,23 @@ export default function Login() {
               disabled={loading}
               style={{
                 width: '100%',
-                padding: '0.875rem',
+                padding: '1rem',
                 backgroundColor: loading ? '#9CA3AF' : '#E53935',
                 color: 'white',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: '10px',
                 fontSize: '1rem',
                 fontWeight: '600',
                 cursor: loading ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s',
+                transition: 'all 0.3s ease',
                 boxShadow: loading ? 'none' : '0 4px 12px rgba(229, 57, 53, 0.3)',
-                transform: loading ? 'none' : 'translateY(0)',
+                transform: loading ? 'scale(1)' : 'scale(1)',
               }}
               onMouseEnter={(e) => {
                 if (!loading) {
                   e.target.style.backgroundColor = '#C62828';
                   e.target.style.transform = 'translateY(-2px)';
-                  e.target.style.boxShadow = '0 6px 16px rgba(229, 57, 53, 0.4)';
+                  e.target.style.boxShadow = '0 6px 20px rgba(229, 57, 53, 0.4)';
                 }
               }}
               onMouseLeave={(e) => {
@@ -233,51 +284,60 @@ export default function Login() {
               }}
             >
               {loading ? (
-                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+                <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem' }}>
                   <span style={{
-                    width: '16px',
-                    height: '16px',
+                    width: '18px',
+                    height: '18px',
                     border: '2px solid white',
                     borderTopColor: 'transparent',
                     borderRadius: '50%',
                     animation: 'spin 0.6s linear infinite'
                   }} />
-                  Connexion...
+                  Connexion en cours...
                 </span>
               ) : (
                 'Se connecter'
               )}
             </button>
           </form>
-        </div>
 
-        {/* Footer */}
-        <div style={{
-          backgroundColor: '#F9FAFB',
-          padding: '1.5rem 2rem',
-          textAlign: 'center',
-          borderTop: '1px solid #E5E7EB'
-        }}>
-          <p style={{
-            fontSize: '0.75rem',
-            color: '#6B7280',
-            margin: 0
+          {/* Footer */}
+          <div style={{
+            marginTop: '2rem',
+            textAlign: 'center'
           }}>
-            © {new Date().getFullYear()} KLINKOL. Tous droits réservés.
-          </p>
+            <p style={{
+              fontSize: '0.875rem',
+              color: '#9CA3AF',
+              margin: 0
+            }}>
+              © {new Date().getFullYear()} KLINKOL. Tous droits réservés.
+            </p>
+          </div>
         </div>
       </div>
 
       {/* Styles d'animation */}
       <style>{`
-        @keyframes slideIn {
+        @keyframes fadeIn {
           from {
             opacity: 0;
-            transform: translateY(20px);
+            transform: scale(0.95);
           }
           to {
             opacity: 1;
-            transform: translateY(0);
+            transform: scale(1);
+          }
+        }
+
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateX(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
           }
         }
 
@@ -294,16 +354,27 @@ export default function Login() {
 
         @keyframes shake {
           0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-10px); }
-          75% { transform: translateX(10px); }
+          25% { transform: translateX(-5px); }
+          75% { transform: translateX(5px); }
         }
 
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
 
-        input:focus {
-          box-shadow: 0 0 0 3px rgba(229, 57, 53, 0.1);
+        /* Responsive */
+        @media (max-width: 1024px) {
+          body > div > div:first-child {
+            display: none !important;
+          }
+          body > div > div:last-child {
+            background: linear-gradient(135deg, #E53935 0%, #C62828 100%);
+          }
+          body > div > div:last-child > div {
+            background: white;
+            padding: 2rem;
+            border-radius: 20px;
+          }
         }
       `}</style>
     </div>
