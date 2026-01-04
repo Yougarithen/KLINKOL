@@ -2,8 +2,8 @@
 import { useState } from "react";
 import { apiRequest } from "@/services/apiConfig";
 import { useNavigate, useLocation } from "react-router-dom";
-import KcimentImg from "@/assets/Kciment.jpg";
 import LogoImg from "@/assets/Logo.png";
+import { toast } from "sonner";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -20,6 +20,9 @@ export default function Login() {
     setError(null);
     setLoading(true);
 
+    // Toast de chargement
+    toast.loading("Connexion en cours...");
+
     try {
       const response = await apiRequest("/auth/login", {
         method: "POST",
@@ -28,12 +31,25 @@ export default function Login() {
 
       localStorage.setItem("erp_auth_token", response.data.token);
       localStorage.setItem("erp_user_data", JSON.stringify(response.data.user));
-      localStorage.setItem("erp_session_expires", response.data.expiresAt);
+      
+      // ✅ CORRECTION: Créer une nouvelle date d'expiration (10 minutes à partir de maintenant)
+      const expiryDate = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      localStorage.setItem("erp_session_expires", expiryDate.toISOString());
 
-      navigate("/clients");
+      // Remplacer le toast de chargement par succès
+      const userName = response.data.user.nom_utilisateur || 'Utilisateur';
+      toast.dismiss();
+      toast.success(`Bienvenue ${userName} !`);
+
+      // Attendre un peu avant de rediriger
+      setTimeout(() => {
+        navigate("/clients");
+      }, 1000);
     } catch (err) {
+      // Remplacer le toast de chargement par erreur
+      toast.dismiss();
+      toast.error(err.message || "Erreur de connexion");
       setError(err.message || "Erreur de connexion");
-    } finally {
       setLoading(false);
     }
   };
@@ -69,15 +85,7 @@ export default function Login() {
               marginBottom: '2rem'
             }}
           />
-          <div style={{
-            color: 'white',
-            fontSize: '1.5rem',
-            fontWeight: '300',
-            letterSpacing: '0.05em',
-            opacity: '0.95'
-          }}>
-            Système de Gestion ERP
-          </div>
+
         </div>
       </div>
 

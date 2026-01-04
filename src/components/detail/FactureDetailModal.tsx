@@ -63,7 +63,7 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
       // Initialiser le formulaire avec le montant restant
       setNouveauPaiement(prev => ({
         ...prev,
-        montant_paye: factureRes.data.montant_restant || 0
+        montant_paye: Number(factureRes.data.montant_restant) || 0
       }));
     } catch (error) {
       console.error("Erreur:", error);
@@ -91,8 +91,9 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
       return;
     }
 
-    if (nouveauPaiement.montant_paye > facture.montant_restant) {
-      alert(`Le montant ne peut pas dépasser ${facture.montant_restant.toFixed(2)} DZD`);
+    const montantRestant = Number(facture.montant_restant);
+    if (nouveauPaiement.montant_paye > montantRestant) {
+      alert(`Le montant ne peut pas dépasser ${montantRestant.toFixed(2)} DZD`);
       return;
     }
 
@@ -123,7 +124,8 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
   };
 
   const handlePayerCompletement = async () => {
-    if (!confirm(`Voulez-vous enregistrer le paiement complet de ${facture.montant_restant.toFixed(2)} DZD ?`)) return;
+    const montantRestant = Number(facture.montant_restant);
+    if (!confirm(`Voulez-vous enregistrer le paiement complet de ${montantRestant.toFixed(2)} DZD ?`)) return;
 
     try {
       await paiementService.payerCompletement(
@@ -158,12 +160,12 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
 
   if (!facture) return null;
 
-  const pourcentagePaye = facture.montant_ttc > 0 
-    ? (facture.montant_paye / facture.montant_ttc) * 100 
-    : 0;
-
-  // ✅ CORRECTION: Vérifier si la facture est entièrement payée
-  const estEntierementPayee = facture.montant_restant <= 0.01; // Tolérance de 1 centime
+  const montantTTC = Number(facture.montant_ttc) || 0;
+  const montantPaye = Number(facture.montant_paye) || 0;
+  const montantRestant = Number(facture.montant_restant) || 0;
+  
+  const pourcentagePaye = montantTTC > 0 ? (montantPaye / montantTTC) * 100 : 0;
+  const estEntierementPayee = montantRestant <= 0.01;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
@@ -249,11 +251,11 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
                 </thead>
                 <tbody>
                   {facture.lignes?.map((ligne: any, index: number) => {
-                    // ✅ Calcul correct avec remise ligne ET TVA
-                    const prixHT = ligne.prix_unitaire_ht || 0;
-                    const quantite = ligne.quantite || 0;
-                    const remiseLigne = ligne.remise_ligne || 0;
-                    const tauxTVA = ligne.taux_tva || 0;
+                    // ✅ CONVERSION EN NOMBRE
+                    const prixHT = Number(ligne.prix_unitaire_ht) || 0;
+                    const quantite = Number(ligne.quantite) || 0;
+                    const remiseLigne = Number(ligne.remise_ligne) || 0;
+                    const tauxTVA = Number(ligne.taux_tva) || 0;
                     
                     const totalHTAvantRemise = prixHT * quantite;
                     const montantRemise = totalHTAvantRemise * (remiseLigne / 100);
@@ -291,56 +293,53 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
               </table>
             </div>
 
-            {/* Totaux - ✅ CORRECTION: Affichage cohérent */}
+            {/* Totaux */}
             <div className="mt-4 bg-muted/30 rounded-lg p-4 space-y-2">
-              {/* Montants AVANT remise globale (issus des lignes) */}
               <div className="flex justify-between text-sm">
                 <span>Sous-total HT (lignes):</span>
                 <span className="font-semibold">
-                  {(facture.montant_ht || 0).toFixed(2)} DZD
+                  {Number(facture.montant_ht || 0).toFixed(2)} DZD
                 </span>
               </div>
               <div className="flex justify-between text-sm">
                 <span>TVA (lignes):</span>
                 <span className="font-semibold">
-                  {(facture.montant_tva || 0).toFixed(2)} DZD
+                  {Number(facture.montant_tva || 0).toFixed(2)} DZD
                 </span>
               </div>
               <div className="flex justify-between text-sm border-t pt-2">
                 <span>Total avant remise globale:</span>
                 <span className="font-semibold">
-                  {((facture.montant_ht || 0) + (facture.montant_tva || 0)).toFixed(2)} DZD
+                  {(Number(facture.montant_ht || 0) + Number(facture.montant_tva || 0)).toFixed(2)} DZD
                 </span>
               </div>
               
-              {/* Remise globale si elle existe */}
-              {(facture.remise_globale || 0) > 0 && (
+              {Number(facture.remise_globale || 0) > 0 && (
                 <>
                   <div className="flex justify-between text-orange-600 font-medium">
                     <span>Remise globale ({facture.remise_globale}%):</span>
                     <span>
-                      - {(facture.montant_remise || 0).toFixed(2)} DZD
+                      - {Number(facture.montant_remise || 0).toFixed(2)} DZD
                     </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span className="text-xs">Sous-total HT après remise:</span>
                     <span className="text-xs">
-                      {((facture.montant_ht || 0) * (1 - (facture.remise_globale || 0) / 100)).toFixed(2)} DZD
+                      {(Number(facture.montant_ht || 0) * (1 - Number(facture.remise_globale || 0) / 100)).toFixed(2)} DZD
                     </span>
                   </div>
                   <div className="flex justify-between text-sm text-muted-foreground">
                     <span className="text-xs">TVA après remise:</span>
                     <span className="text-xs">
-                      {((facture.montant_tva || 0) * (1 - (facture.remise_globale || 0) / 100)).toFixed(2)} DZD
+                      {(Number(facture.montant_tva || 0) * (1 - Number(facture.remise_globale || 0) / 100)).toFixed(2)} DZD
                     </span>
                   </div>
                 </>
               )}
               
-              {/* Total final TTC */}
               <div className="flex justify-between text-lg font-bold border-t-2 border-primary/20 pt-2 mt-2">
                 <span>TOTAL À PAYER TTC:</span>
-                <span className="text-primary">{(facture.montant_ttc || 0).toFixed(2)} DZD</span>
+                <span className="text-primary">{montantTTC.toFixed(2)} DZD</span>
               </div>
             </div>
           </div>
@@ -366,16 +365,16 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
 
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
-                <p className="text-xs text-muted-foreground">Montant total</p>
-                <p className="font-bold">{(facture.montant_ttc || 0).toFixed(2)} DZD</p>
+                <p className="text-xs text-muted-foreground">Total achat</p>
+                <p className="font-bold">{montantTTC.toFixed(2)} DZD</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Payé</p>
-                <p className="font-bold text-success">{(facture.montant_paye || 0).toFixed(2)} DZD</p>
+                <p className="text-xs text-muted-foreground">Total payé</p>
+                <p className="font-bold text-success">{montantPaye.toFixed(2)} DZD</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Restant</p>
-                <p className="font-bold text-warning">{(facture.montant_restant || 0).toFixed(2)} DZD</p>
+                <p className="text-xs text-muted-foreground">Solde</p>
+                <p className="font-bold text-warning">{montantRestant.toFixed(2)} DZD</p>
               </div>
             </div>
           </div>
@@ -387,7 +386,6 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
                 <CreditCard className="h-5 w-5" />
                 Historique des paiements ({paiements.length})
               </h3>
-              {/* ✅ CORRECTION: Cacher le bouton si facture entièrement payée */}
               {!estEntierementPayee && facture.statut !== "Brouillon" && (
                 <Button
                   size="sm"
@@ -399,7 +397,6 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
               )}
             </div>
 
-            {/* ✅ CORRECTION: Message si facture entièrement payée */}
             {estEntierementPayee && (
               <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-green-600" />
@@ -424,10 +421,10 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
                         ...nouveauPaiement,
                         montant_paye: parseFloat(e.target.value) || 0
                       })}
-                      max={facture.montant_restant}
+                      max={montantRestant}
                     />
                     <p className="text-xs text-muted-foreground mt-1">
-                      Maximum: {facture.montant_restant.toFixed(2)} DZD
+                      Maximum: {montantRestant.toFixed(2)} DZD
                     </p>
                   </div>
 
@@ -513,7 +510,7 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
                       <div className="flex items-center gap-3">
                         <CheckCircle className="h-5 w-5 text-success" />
                         <div>
-                          <p className="font-semibold">{(paiement.montant_paye || 0).toFixed(2)} DZD</p>
+                          <p className="font-semibold">{Number(paiement.montant_paye || 0).toFixed(2)} DZD</p>
                           <p className="text-xs text-muted-foreground">
                             {new Date(paiement.date_paiement).toLocaleDateString("fr-FR")} • {paiement.mode_paiement}
                             {paiement.reference && ` • ${paiement.reference}`}
@@ -546,10 +543,9 @@ export function FactureDetailModal({ id_facture, onClose, onUpdate }: FactureDet
               </Button>
             )}
             
-            {/* ✅ CORRECTION: Cacher le bouton si facture entièrement payée */}
             {!estEntierementPayee && facture.statut !== "Brouillon" && (
               <Button onClick={handlePayerCompletement} variant="outline" className="flex-1">
-                Payer le solde ({(facture.montant_restant || 0).toFixed(2)} DZD)
+                Payer le solde ({montantRestant.toFixed(2)} DZD)
               </Button>
             )}
 

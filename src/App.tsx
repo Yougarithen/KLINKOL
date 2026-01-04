@@ -1,4 +1,3 @@
-import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -20,14 +19,13 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <Toaster />
       <Sonner />
       <BrowserRouter>
         {/* SessionManager placé ici pour rester monté pendant toute la navigation */}
         <SessionManager 
-          sessionDurationMinutes={2}  // 2 minutes pour tester - changez selon vos besoins
-          warningMinutes={1}            // Avertir 1 minute avant expiration
-          debug={true}                  // Activer les logs - désactiver en production
+          sessionDurationMinutes={2}
+          warningMinutes={1}
+          debug={true}
         />
         
         <Routes>

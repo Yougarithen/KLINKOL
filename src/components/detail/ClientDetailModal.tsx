@@ -15,10 +15,13 @@ import {
   FileText,
   AlertCircle,
   CheckCircle2,
-  Loader2
+  Loader2,
+  Download
 } from "lucide-react";
 import clientService from "@/services/clientService";
 import { getTypeIcon, ClientTypeBadge } from "@/util/clientTypeHelpers.tsx";
+import { genererFicheClientPDF } from "@/util/clientInfoPdfGenerator";
+import { toast } from "sonner";
 
 interface ClientType {
   id: string;
@@ -46,6 +49,7 @@ interface ClientDetailModalProps {
 export function ClientDetailModal({ client, onClientUpdated }: ClientDetailModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
   const [editedClient, setEditedClient] = useState<ClientType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -139,6 +143,26 @@ export function ClientDetailModal({ client, onClientUpdated }: ClientDetailModal
     setEditedClient({ ...editedClient, [field]: value });
   };
 
+  const handleGeneratePDF = async () => {
+    if (!client) return;
+    
+    try {
+      setIsGeneratingPDF(true);
+      toast.loading("Génération du PDF en cours...");
+      
+      await genererFicheClientPDF(client);
+      
+      toast.dismiss();
+      toast.success("PDF généré avec succès !");
+    } catch (error) {
+      console.error("Erreur lors de la génération du PDF:", error);
+      toast.dismiss();
+      toast.error("Erreur lors de la génération du PDF");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Messages d'alerte */}
@@ -176,10 +200,31 @@ export function ClientDetailModal({ client, onClientUpdated }: ClientDetailModal
         
         <div className="flex gap-2">
           {!isEditing ? (
-            <Button onClick={handleEdit} variant="outline" size="sm">
-              <Edit2 className="h-4 w-4 mr-2" />
-              Modifier
-            </Button>
+            <>
+              <Button 
+                onClick={handleGeneratePDF} 
+                variant="outline" 
+                size="sm"
+                disabled={isGeneratingPDF}
+                className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
+              >
+                {isGeneratingPDF ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Génération...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-2" />
+                    Imprimer infos
+                  </>
+                )}
+              </Button>
+              <Button onClick={handleEdit} variant="outline" size="sm">
+                <Edit2 className="h-4 w-4 mr-2" />
+                Modifier
+              </Button>
+            </>
           ) : (
             <>
               <Button 

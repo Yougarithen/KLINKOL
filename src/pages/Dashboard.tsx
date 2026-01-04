@@ -24,7 +24,6 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     productionSemaine: 0,
-    stockTotal: 0,
     ventesMois: 0,
     clientsActifs: 0,
     alertesStock: 0,
@@ -56,29 +55,23 @@ const Dashboard = () => {
         matierePremiereService.getAlertes(),
       ]);
 
-      // Calculer production de la semaine
+      // Calculer production de la semaine - CONVERSION EN NOMBRE
       const debutSemaine = new Date();
       debutSemaine.setDate(debutSemaine.getDate() - debutSemaine.getDay());
       debutSemaine.setHours(0, 0, 0, 0);
 
       const productionSemaine = productionsRes.data
         .filter((p: any) => new Date(p.date_production) >= debutSemaine)
-        .reduce((acc: number, p: any) => acc + p.quantite_produite, 0);
+        .reduce((acc: number, p: any) => acc + Number(p.quantite_produite), 0);
 
-      // Calculer stock total des matières premières
-      const stockTotal = matieresRes.data.reduce(
-        (acc: number, m: any) => acc + m.stock_actuel,
-        0
-      );
-
-      // Calculer ventes du mois
+      // Calculer ventes du mois - CONVERSION EN NOMBRE
       const debutMois = new Date();
       debutMois.setDate(1);
       debutMois.setHours(0, 0, 0, 0);
 
       const ventesMois = facturesRes.data
         .filter((f: any) => new Date(f.date_facture) >= debutMois)
-        .reduce((acc: number, f: any) => acc + f.montant_ttc, 0);
+        .reduce((acc: number, f: any) => acc + Number(f.montant_ttc), 0);
 
       // Compter clients actifs (ayant des factures ce mois)
       const clientsActifs = new Set(
@@ -89,12 +82,11 @@ const Dashboard = () => {
 
       // Compter factures en cours (non payées)
       const facturesEnCours = facturesRes.data.filter(
-        (f: any) => f.montant_restant > 0 && f.statut !== "Annulée"
+        (f: any) => Number(f.montant_restant) > 0 && f.statut !== "Annulée"
       ).length;
 
       setStats({
         productionSemaine,
-        stockTotal,
         ventesMois,
         clientsActifs,
         alertesStock: alertesRes.data.length,
@@ -133,20 +125,13 @@ const Dashboard = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 mb-8">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 mb-8">
         <StatCard
           title="Production Semaine"
           value={stats.productionSemaine.toLocaleString()}
           subtitle="Unités produites"
           icon={Factory}
           variant="primary"
-        />
-        <StatCard
-          title="Stock Total"
-          value={stats.stockTotal.toLocaleString()}
-          subtitle="Matières premières"
-          icon={Package}
-          variant="default"
         />
         <StatCard
           title="Ventes Mois"
@@ -181,13 +166,15 @@ const Dashboard = () => {
         />
       </div>
 
-      {/* Charts Grid */}
-      <div className="grid gap-6 lg:grid-cols-3 mb-8">
-        <ProductionChart />
+      {/* Stock Chart - Pleine largeur */}
+      <div className="mb-8">
         <StockChart />
       </div>
 
- 
+      {/* Production Chart */}
+      <div className="grid gap-6 lg:grid-cols-1 mb-8">
+        <ProductionChart />
+      </div>
     </MainLayout>
   );
 };

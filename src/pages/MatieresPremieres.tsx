@@ -1,5 +1,5 @@
 // ============================================================
-// PAGE MATIÈRES PREMIÈRES MISE À JOUR
+// PAGE MATIÈRES PREMIÈRES CORRIGÉE
 // ============================================================
 
 // pages/MatieresPremieres.tsx
@@ -25,7 +25,7 @@ import {
   FileText
 } from "lucide-react";
 import matierePremiereService from "@/services/matierePremiereService";
-import { AddMatierePremiereForm } from "@/components/form/AddMatierePremiereForm";
+import { RavitaillementForm } from "@/components/form/RavitaillementForm";
 
 // Type backend
 interface MatierePremiere {
@@ -89,7 +89,7 @@ const MatieresPremieres = () => {
   const [matieres, setMatieres] = useState<MatierePremiere[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [showRavitaillementForm, setShowRavitaillementForm] = useState(false);
   const [selectedType, setSelectedType] = useState<string | null>(null);
 
   useEffect(() => {
@@ -105,7 +105,11 @@ const MatieresPremieres = () => {
       
       const matieresAvecId = response.data.map((m: any) => ({
         ...m,
-        id: m.id_matiere.toString()
+        id: m.id_matiere.toString(),
+        // ✅ Convertir en nombres pour éviter la concaténation
+        stock_actuel: Number(m.stock_actuel),
+        stock_minimum: Number(m.stock_minimum),
+        prix_unitaire: Number(m.prix_unitaire || 0)
       }));
       
       setMatieres(matieresAvecId);
@@ -160,21 +164,27 @@ const MatieresPremieres = () => {
       key: "stock_actuel",
       header: "Stock Actuel",
       render: (mp: MatierePremiere) => {
-        const isLow = mp.stock_actuel < mp.stock_minimum;
-        const percentage = mp.stock_minimum > 0 
-          ? (mp.stock_actuel / (mp.stock_minimum * 2)) * 100 
-          : 50;
+        const stockActuel = Number(mp.stock_actuel);
+        const stockMin = Number(mp.stock_minimum);
+        const isLow = stockActuel < stockMin;
+        
+        // ✅ Calcul corrigé du pourcentage
+        // Si stock >= 5x minimum = 100%
+        // Si stock = minimum = 20%
+        // Si stock = 0 = 0%
+        const maxStock = stockMin * 5;
+        const percentage = maxStock > 0 ? Math.min((stockActuel / maxStock) * 100, 100) : 50;
 
         return (
           <div className="space-y-1.5 min-w-[180px]">
             <div className="flex items-center justify-between text-sm">
               <span className={isLow ? "text-destructive font-medium" : "font-medium"}>
-                {mp.stock_actuel.toLocaleString()} {mp.unite}
+                {stockActuel.toLocaleString('fr-FR')} {mp.unite}
               </span>
               {isLow && <AlertTriangle className="h-4 w-4 text-destructive" />}
             </div>
             <Progress
-              value={Math.min(percentage, 100)}
+              value={percentage}
               className={`h-2 ${
                 isLow
                   ? "[&>div]:bg-destructive"
@@ -184,7 +194,7 @@ const MatieresPremieres = () => {
               }`}
             />
             <p className="text-xs text-muted-foreground">
-              Seuil minimum: {mp.stock_minimum} {mp.unite}
+              Seuil minimum: {stockMin.toLocaleString('fr-FR')} {mp.unite}
             </p>
           </div>
         );
@@ -196,7 +206,7 @@ const MatieresPremieres = () => {
       render: (mp: MatierePremiere) => (
         <span>
           {mp.prix_unitaire 
-            ? new Intl.NumberFormat("fr-DZ").format(mp.prix_unitaire)
+            ? new Intl.NumberFormat("fr-DZ").format(Number(mp.prix_unitaire))
             : "-"} DZD
         </span>
       ),
@@ -205,10 +215,12 @@ const MatieresPremieres = () => {
       key: "status",
       header: "Statut",
       render: (mp: MatierePremiere) => {
-        const isLow = mp.stock_actuel < mp.stock_minimum;
-        const percentage = mp.stock_minimum > 0 
-          ? (mp.stock_actuel / (mp.stock_minimum * 2)) * 100 
-          : 50;
+        const stockActuel = Number(mp.stock_actuel);
+        const stockMin = Number(mp.stock_minimum);
+        const isLow = stockActuel < stockMin;
+        
+        const maxStock = stockMin * 5;
+        const percentage = maxStock > 0 ? Math.min((stockActuel / maxStock) * 100, 100) : 50;
 
         if (isLow) {
           return (
@@ -241,10 +253,14 @@ const MatieresPremieres = () => {
     },
   ];
 
-  // Statistiques
-  const stockCritique = matieresFiltrees.filter(m => m.stock_actuel < m.stock_minimum).length;
-  const valeurStock = matieresFiltrees.reduce((acc, m) => acc + m.stock_actuel * (m.prix_unitaire || 0), 0);
-  const stockTotal = matieresFiltrees.reduce((acc, m) => acc + m.stock_actuel, 0);
+  // ✅ Statistiques corrigées avec conversion en nombres
+  const stockCritique = matieresFiltrees.filter(m => Number(m.stock_actuel) < Number(m.stock_minimum)).length;
+  const valeurStock = matieresFiltrees.reduce((acc, m) => {
+    return acc + (Number(m.stock_actuel) * Number(m.prix_unitaire || 0));
+  }, 0);
+  const stockTotal = matieresFiltrees.reduce((acc, m) => {
+    return acc + Number(m.stock_actuel);
+  }, 0);
 
   // Comptage par type
   const typesCount = matieres.reduce((acc, m) => {
@@ -253,7 +269,7 @@ const MatieresPremieres = () => {
   }, {} as Record<string, number>);
 
   // Loading
-  if (loading && !showAddForm) {
+  if (loading && !showRavitaillementForm) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center h-[60vh]">
@@ -267,7 +283,7 @@ const MatieresPremieres = () => {
   }
 
   // Error
-  if (error && !showAddForm) {
+  if (error && !showRavitaillementForm) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center h-[60vh]">
@@ -282,28 +298,35 @@ const MatieresPremieres = () => {
     );
   }
 
-  // Modal formulaire
-  if (showAddForm) {
+  // Modal formulaire de ravitaillement
+  if (showRavitaillementForm) {
     return (
       <MainLayout>
-        <div className="max-w-3xl mx-auto">
+        <div className="max-w-2xl mx-auto">
           <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-2xl font-bold">Nouvelle matière première</h2>
+            <div>
+              <h2 className="text-2xl font-bold">Nouveau ravitaillement</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Ajoutez du stock à une matière première existante
+              </p>
+            </div>
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setShowAddForm(false)}
+              onClick={() => setShowRavitaillementForm(false)}
             >
               <X className="h-5 w-5" />
             </Button>
           </div>
-          <AddMatierePremiereForm
-            onSuccess={() => {
-              fetchMatieres();
-              setShowAddForm(false);
-            }}
-            onCancel={() => setShowAddForm(false)}
-          />
+          <div className="bg-card rounded-lg border p-6">
+            <RavitaillementForm
+              onSuccess={() => {
+                fetchMatieres();
+                setShowRavitaillementForm(false);
+              }}
+              onCancel={() => setShowRavitaillementForm(false)}
+            />
+          </div>
         </div>
       </MainLayout>
     );
@@ -326,9 +349,9 @@ const MatieresPremieres = () => {
             {loading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
             Actualiser
           </Button>
-          <Button className="gap-2" onClick={() => setShowAddForm(true)}>
+          <Button className="gap-2" onClick={() => setShowRavitaillementForm(true)}>
             <Plus className="h-4 w-4" />
-            Nouvelle Matière
+            Nouveau Ravitaillement
           </Button>
         </div>
       </div>
@@ -377,21 +400,7 @@ const MatieresPremieres = () => {
             {stockCritique > 0 && <AlertTriangle className="h-5 w-5" />}
           </p>
         </div>
-        <div className="stat-card">
-          <p className="text-sm text-muted-foreground">Stock Total</p>
-          <p className="text-2xl font-bold text-foreground">
-            {stockTotal.toLocaleString()}
-          </p>
-        </div>
-        <div className="stat-card">
-          <p className="text-sm text-muted-foreground">Valeur Stock</p>
-          <p className="text-2xl font-bold text-primary">
-            {new Intl.NumberFormat("fr-DZ", {
-              notation: "compact",
-              compactDisplay: "short",
-            }).format(valeurStock)} DZD
-          </p>
-        </div>
+ 
       </div>
 
       {/* Alert */}
@@ -421,16 +430,10 @@ const MatieresPremieres = () => {
           </h3>
           <p className="text-muted-foreground mb-4">
             {selectedType
-              ? "Essayez de sélectionner un autre type ou ajoutez une nouvelle matière"
-              : "Commencez par ajouter votre première matière première"
+              ? "Essayez de sélectionner un autre type"
+              : "Commencez par ravitailler vos matières premières"
             }
           </p>
-          {!selectedType && (
-            <Button onClick={() => setShowAddForm(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Ajouter une matière
-            </Button>
-          )}
         </div>
       ) : (
         <DataTable

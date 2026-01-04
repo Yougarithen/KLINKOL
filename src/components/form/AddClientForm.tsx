@@ -435,7 +435,7 @@ export function AddClientForm({ onSuccess }: AddClientFormProps) {
                   name="n_article"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>N° Article</FormLabel>
+                      <FormLabel>N° Artisant</FormLabel>
                       <FormControl>
                         <Input placeholder="345678" {...field} />
                       </FormControl>

@@ -3,12 +3,27 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { DataTable } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, History, Boxes, Archive, TrendingUp, Loader2, AlertCircle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { 
+  Plus, 
+  History, 
+  Boxes, 
+  Archive, 
+  TrendingUp, 
+  Loader2, 
+  AlertCircle,
+  FileText,
+  BarChart3,
+  Download
+} from "lucide-react";
 import produitService from "@/services/produitService";
+import factureService from "@/services/factureService";
+import productionService from "@/services/productionService";
+import { genererEtatProduitsPDF } from "@/util/produitPdfGenerator";
 
 // Type correspondant au backend + id pour DataTable
 interface Produit {
-  id: string; // Pour DataTable
+  id: string;
   id_produit: number;
   code_produit: string;
   nom: string;
@@ -23,153 +38,36 @@ interface Produit {
   date_creation: string;
 }
 
-// ============================================================
-// CONFIGURATION DES PALETTES PAR PRODUIT
-// ============================================================
-// Fichier de configuration: config/palettesConfig.ts
-interface PaletteConfig {
-  [code_produit: string]: number; // Nombre d'unités par palette
+interface ProduitProduction {
+  nom_produit: string;
+  code_produit: string;
+  quantite_produite: number;
+  unite: string;
+  nombre_lots: number;
+  nombre_palettes: number;
 }
 
-// Configuration par défaut - À adapter selon tes produits
-const PALETTES_CONFIG: PaletteConfig = {
-  // Exemple: Pour chaque code produit, définis combien d'unités il y a par palette
-  "PAIN-001": 50,      // 50 pains par palette
-  "HUILE-001": 48,     // 48 bidons par palette
-  "FARINE-001": 40,    // 40 sacs par palette
-  "SUCRE-001": 30,     // 30 sacs par palette
-  // Ajoute tes autres produits ici...
-};
+interface ProduitVente {
+  nom_produit: string;
+  code_produit: string;
+  quantite_vendue: number;
+  unite: string;
+  montant_total: number;
+  nombre_factures: number;
+  factures_ids?: string[];
+}
 
-// Valeur par défaut si le produit n'est pas dans la config
-const UNITES_PAR_PALETTE_DEFAUT = 64;
-
-// Fonction utilitaire pour calculer le nombre de palettes
-const calculerPalettes = (stock_actuel: number, code_produit: string): number => {
-  const unitesParPalette = PALETTES_CONFIG[code_produit] || UNITES_PAR_PALETTE_DEFAUT;
-  return Math.floor(stock_actuel / unitesParPalette);
-};
+const UNITES_PAR_PALETTE = 64;
 
 // ============================================================
 // COLONNES DU TABLEAU
-// ============================================================
-const columns = [
-  {
-    key: "nom",
-    header: "Désignation",
-    render: (produit: Produit) => (
-      <div>
-        <p className="font-medium text-foreground">{produit.nom}</p>
-        {produit.code_produit && (
-          <span className="font-mono text-sm font-semibold bg-primary/10 text-primary px-2 py-1 rounded">
-            {produit.code_produit}
-          </span>
-        )}
-      </div>
-    ),
-  },
-  {
-    key: "stockActuel",
-    header: "Stock Actuel",
-    render: (produit: Produit) => {
-      const nombrePalettes = calculerPalettes(produit.stock_actuel, produit.code_produit);
-      const unitesParPalette = PALETTES_CONFIG[produit.code_produit] || UNITES_PAR_PALETTE_DEFAUT;
-      const resteUnites = produit.stock_actuel % unitesParPalette;
-      
-      return (
-        <div className="flex flex-col gap-2">
-          {/* Stock en unités (sacs, bidons, etc.) */}
-          <div className="flex items-center gap-2">
-            <Boxes className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium">
-              {produit.stock_actuel.toLocaleString()} {produit.unite}
-            </span>
-          </div>
-
-          {/* Stock en palettes */}
-          <div className="flex items-center gap-2">
-            <Archive className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-primary">
-              {nombrePalettes.toLocaleString()} {nombrePalettes > 1 ? 'palettes' : 'palette'}
-              {resteUnites > 0 && (
-                <span className="text-xs text-muted-foreground ml-1">
-                  + {resteUnites} {produit.unite}
-                </span>
-              )}
-            </span>
-          </div>
-          
-          {/* Info supplémentaire */}
-          <span className="text-xs text-muted-foreground">
-            ({unitesParPalette} {produit.unite}/palette)
-          </span>
-        </div>
-      );
-    },
-  },
-  {
-    key: "poids",
-    header: "Poids Unitaire",
-    render: (produit: Produit) => (
-      <span className="text-sm">
-        {produit.poids ? `${produit.poids} ${produit.unite_poids}` : "-"}
-      </span>
-    ),
-  },
-  {
-    key: "prixVente",
-    header: "Prix de Vente",
-    render: (produit: Produit) => (
-      <div>
-        <span className="font-medium">
-          {produit.prix_vente_suggere 
-            ? new Intl.NumberFormat("fr-DZ").format(produit.prix_vente_suggere) 
-            : "-"} DZD
-        </span>
-        {produit.taux_tva > 0 && (
-          <span className="text-xs text-muted-foreground ml-1">
-            (TVA {produit.taux_tva}%)
-          </span>
-        )}
-      </div>
-    ),
-  },
-  {
-    key: "valeurStock",
-    header: "Valeur Stock",
-    render: (produit: Produit) => {
-      const valeur = produit.stock_actuel * (produit.prix_vente_suggere || 0);
-      return (
-        <span className="font-medium text-primary">
-          {new Intl.NumberFormat("fr-DZ", {
-            notation: "compact",
-            compactDisplay: "short",
-          }).format(valeur)} DZD
-        </span>
-      );
-    },
-  },
-  {
-    key: "actions",
-    header: "Actions",
-    render: (produit: Produit) => (
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm">
-          <History className="h-4 w-4 mr-1" />
-          Historique
-        </Button>
-      </div>
-    ),
-  },
-];
-
-// ============================================================
-// COMPOSANT PRINCIPAL
 // ============================================================
 const Produits = () => {
   const [produits, setProduits] = useState<Produit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
+  const { toast } = useToast();
 
   // Charger les produits au montage du composant
   useEffect(() => {
@@ -183,34 +81,300 @@ const Produits = () => {
       
       const response = await produitService.getAll();
       
-      // Mapper les données pour ajouter un id (requis par DataTable)
-      const produitsAvecId = response.data.map(p => ({
-        ...p,
-        id: p.id_produit.toString()
-      }));
+      const produitsAvecId = response.data
+        .map(p => ({
+          ...p,
+          id: p.id_produit.toString(),
+          stock_actuel: Number(p.stock_actuel),
+          prix_vente_suggere: Number(p.prix_vente_suggere),
+          poids: Number(p.poids)
+        }))
+        .sort((a, b) => b.stock_actuel - a.stock_actuel);
       
       setProduits(produitsAvecId);
+      
+      toast({
+        title: "Produits chargés",
+        description: `${produitsAvecId.length} produit(s) chargé(s) avec succès`,
+      });
     } catch (err: any) {
       console.error("Erreur lors du chargement des produits:", err);
       setError(err.message || "Impossible de charger les produits");
+      toast({
+        variant: "destructive",
+        title: "Erreur",
+        description: err.message || "Impossible de charger les produits",
+      });
     } finally {
       setLoading(false);
     }
   };
 
+  // Générer l'état individuel d'un produit
+  const genererEtatProduit = async (produit: Produit) => {
+    try {
+      setGeneratingPdf(true);
+      toast({
+        title: "Génération en cours",
+        description: "Collecte des données du produit...",
+      });
+
+      // Récupérer les productions du produit
+      const productionsResponse = await productionService.getByProduit(produit.id_produit);
+      const productions = productionsResponse.data || [];
+
+      // Récupérer toutes les factures et filtrer par produit
+      const facturesResponse = await factureService.getAll();
+      const factures = facturesResponse.data || [];
+
+      // Calculer les ventes de ce produit
+      let quantiteVendue = 0;
+      let montantTotal = 0;
+      let nombreFactures = 0;
+      const facturesIds: string[] = [];
+
+      factures.forEach((facture: any) => {
+        if (facture.lignes && Array.isArray(facture.lignes)) {
+          const lignesProduit = facture.lignes.filter((ligne: any) => ligne.id_produit === produit.id_produit);
+          if (lignesProduit.length > 0) {
+            lignesProduit.forEach((ligne: any) => {
+              quantiteVendue += Number(ligne.quantite) || 0;
+              montantTotal += Number(ligne.total_ligne) || 0;
+            });
+            facturesIds.push(facture.numero_facture || `FAC-${facture.id_facture}`);
+            nombreFactures++;
+          }
+        }
+      });
+
+      // Calculer la quantité produite
+      const quantiteProduite = productions.reduce((acc: number, prod: any) => 
+        acc + (Number(prod.quantite_produite) || 0), 0
+      );
+
+      // Calculer le nombre de palettes
+      const nombrePalettes = Math.floor(quantiteProduite / UNITES_PAR_PALETTE);
+
+      const produitsProduction: ProduitProduction[] = [{
+        nom_produit: produit.nom,
+        code_produit: produit.code_produit || '-',
+        quantite_produite: quantiteProduite,
+        unite: produit.unite,
+        nombre_lots: productions.length,
+        nombre_palettes: nombrePalettes
+      }];
+
+      const produitsVente: ProduitVente[] = [{
+        nom_produit: produit.nom,
+        code_produit: produit.code_produit || '-',
+        quantite_vendue: quantiteVendue,
+        unite: produit.unite,
+        montant_total: montantTotal,
+        nombre_factures: nombreFactures,
+        factures_ids: facturesIds
+      }];
+
+      await genererEtatProduitsPDF(
+        produitsProduction,
+        produitsVente,
+        `${produit.nom} - Tout le temps`
+      );
+
+      toast({
+        title: "PDF généré",
+        description: `État du produit "${produit.nom}" généré avec succès`,
+      });
+    } catch (err: any) {
+      console.error("Erreur génération PDF:", err);
+      toast({
+        variant: "destructive",
+        title: "Erreur",
+        description: err.message || "Impossible de générer le PDF",
+      });
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  // Générer l'état global de tous les produits
+  const genererEtatGlobal = async () => {
+    try {
+      setGeneratingPdf(true);
+      toast({
+        title: "Génération en cours",
+        description: "Collecte des données de tous les produits...",
+      });
+
+      // Récupérer toutes les productions
+      const productionsResponse = await productionService.getAll();
+      const productions = productionsResponse.data || [];
+
+      // Récupérer toutes les factures
+      const facturesResponse = await factureService.getAll();
+      const factures = facturesResponse.data || [];
+
+      // Calculer les productions par produit
+      const productionsParProduit = new Map<number, ProduitProduction>();
+      
+      productions.forEach((prod: any) => {
+        const existing = productionsParProduit.get(prod.id_produit);
+        if (existing) {
+          existing.quantite_produite += Number(prod.quantite_produite) || 0;
+          existing.nombre_lots += 1;
+          existing.nombre_palettes = Math.floor(existing.quantite_produite / UNITES_PAR_PALETTE);
+        } else {
+          const produitInfo = produits.find(p => p.id_produit === prod.id_produit);
+          const quantite = Number(prod.quantite_produite) || 0;
+          productionsParProduit.set(prod.id_produit, {
+            nom_produit: produitInfo?.nom || 'Produit inconnu',
+            code_produit: produitInfo?.code_produit || '-',
+            quantite_produite: quantite,
+            unite: produitInfo?.unite || 'unité',
+            nombre_lots: 1,
+            nombre_palettes: Math.floor(quantite / UNITES_PAR_PALETTE)
+          });
+        }
+      });
+
+      // Calculer les ventes par produit
+      const ventesParProduit = new Map<number, ProduitVente>();
+
+      factures.forEach((facture: any) => {
+        if (facture.lignes && Array.isArray(facture.lignes)) {
+          facture.lignes.forEach((ligne: any) => {
+            const existing = ventesParProduit.get(ligne.id_produit);
+            const factureId = facture.numero_facture || `FAC-${facture.id_facture}`;
+            
+            if (existing) {
+              existing.quantite_vendue += Number(ligne.quantite) || 0;
+              existing.montant_total += Number(ligne.total_ligne) || 0;
+              existing.nombre_factures += 1;
+              if (existing.factures_ids && !existing.factures_ids.includes(factureId)) {
+                existing.factures_ids.push(factureId);
+              }
+            } else {
+              const produitInfo = produits.find(p => p.id_produit === ligne.id_produit);
+              ventesParProduit.set(ligne.id_produit, {
+                nom_produit: produitInfo?.nom || 'Produit inconnu',
+                code_produit: produitInfo?.code_produit || '-',
+                quantite_vendue: Number(ligne.quantite) || 0,
+                unite: produitInfo?.unite || 'unité',
+                montant_total: Number(ligne.total_ligne) || 0,
+                nombre_factures: 1,
+                factures_ids: [factureId]
+              });
+            }
+          });
+        }
+      });
+
+      const produitsProduction = Array.from(productionsParProduit.values());
+      const produitsVente = Array.from(ventesParProduit.values());
+
+      await genererEtatProduitsPDF(
+        produitsProduction,
+        produitsVente,
+        "Tous les produits - Tout le temps"
+      );
+
+      toast({
+        title: "PDF généré",
+        description: "État global de tous les produits généré avec succès",
+      });
+    } catch (err: any) {
+      console.error("Erreur génération PDF:", err);
+      toast({
+        variant: "destructive",
+        title: "Erreur",
+        description: err.message || "Impossible de générer le PDF",
+      });
+    } finally {
+      setGeneratingPdf(false);
+    }
+  };
+
+  const columns = [
+    {
+      key: "nom",
+      header: "Désignation",
+      render: (produit: Produit) => (
+        <div>
+          <p className="font-medium text-foreground">{produit.nom}</p>
+          {produit.code_produit && (
+            <span className="font-mono text-sm font-semibold bg-primary/10 text-primary px-2 py-1 rounded">
+              {produit.code_produit}
+            </span>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "stockActuel",
+      header: "Stock Actuel",
+      render: (produit: Produit) => {
+        return (
+          <div className="flex items-center gap-2">
+            <Boxes className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">
+              {Number(produit.stock_actuel).toLocaleString()} {produit.unite}
+            </span>
+          </div>
+        );
+      },
+    },
+    {
+      key: "prixVente",
+      header: "Prix de Vente",
+      render: (produit: Produit) => (
+        <span className="font-medium">
+          {produit.prix_vente_suggere 
+            ? new Intl.NumberFormat("fr-DZ").format(Number(produit.prix_vente_suggere)) 
+            : "-"} DZD
+        </span>
+      ),
+    },
+    {
+      key: "valeurStock",
+      header: "Valeur Stock",
+      render: (produit: Produit) => {
+        const valeur = Number(produit.stock_actuel) * Number(produit.prix_vente_suggere || 0);
+        return (
+          <span className="font-medium text-primary">
+            {new Intl.NumberFormat("fr-DZ", {
+              notation: "compact",
+              compactDisplay: "short",
+            }).format(valeur)} DZD
+          </span>
+        );
+      },
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      render: (produit: Produit) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => genererEtatProduit(produit)}
+          disabled={generatingPdf}
+          className="h-8 gap-2"
+        >
+          <Download className="h-4 w-4" />
+          <span className="hidden sm:inline">État</span>
+        </Button>
+      ),
+    },
+  ];
+
   // Calculer les statistiques
-  const totalStock = produits.reduce((acc, p) => acc + p.stock_actuel, 0);
-  
-  const totalPalettes = produits.reduce((acc, p) => {
-    return acc + calculerPalettes(p.stock_actuel, p.code_produit);
-  }, 0);
+  const totalStock = produits.reduce((acc, p) => acc + Number(p.stock_actuel), 0);
   
   const valeurTotale = produits.reduce(
-    (acc, p) => acc + p.stock_actuel * (p.prix_vente_suggere || 0),
+    (acc, p) => acc + Number(p.stock_actuel) * Number(p.prix_vente_suggere || 0),
     0
   );
 
-  const produitsAvecStock = produits.filter(p => p.stock_actuel > 0).length;
+  const produitsAvecStock = produits.filter(p => Number(p.stock_actuel) > 0).length;
 
   // État de chargement
   if (loading) {
@@ -258,6 +422,20 @@ const Produits = () => {
         </div>
         <div className="flex gap-2">
           <Button 
+            variant="outline"
+            onClick={genererEtatGlobal}
+            disabled={generatingPdf || produits.length === 0}
+            className="bg-orange-50 hover:bg-orange-100 border-orange-200 text-orange-700"
+          >
+            {generatingPdf ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4" />
+            )}
+            <span className="hidden sm:inline">État global des produits</span>
+            <span className="sm:hidden">État</span>
+          </Button>
+          <Button 
             variant="outline" 
             onClick={fetchProduits}
             disabled={loading}
@@ -269,15 +447,11 @@ const Produits = () => {
             )}
             Actualiser
           </Button>
-          <Button className="gap-2 animate-slide-up">
-            <Plus className="h-4 w-4" />
-            Nouveau Produit
-          </Button>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-5 mb-8">
+      <div className="grid gap-4 sm:grid-cols-4 mb-8">
         <div className="stat-card">
           <p className="text-sm text-muted-foreground">Total Références</p>
           <p className="text-2xl font-bold text-foreground">{produits.length}</p>
@@ -286,12 +460,6 @@ const Produits = () => {
           <p className="text-sm text-muted-foreground">Stock Total</p>
           <p className="text-2xl font-bold text-foreground">
             {totalStock.toLocaleString()}
-          </p>
-        </div>
-        <div className="stat-card">
-          <p className="text-sm text-muted-foreground">Total Palettes</p>
-          <p className="text-2xl font-bold text-primary">
-            {totalPalettes.toLocaleString()}
           </p>
         </div>
         <div className="stat-card">
@@ -338,34 +506,3 @@ const Produits = () => {
 };
 
 export default Produits;
-
-
-// ============================================================
-// FICHIER DE CONFIGURATION SÉPARÉ (OPTIONNEL)
-// ============================================================
-// Créer un fichier: src/config/palettesConfig.ts
-/*
-export interface PaletteConfig {
-  [code_produit: string]: number;
-}
-
-export const PALETTES_CONFIG: PaletteConfig = {
-  "PAIN-001": 50,
-  "HUILE-001": 48,
-  "FARINE-001": 40,
-  "SUCRE-001": 30,
-  "LAIT-001": 60,
-  "SEL-001": 25,
-  // Ajoute tous tes produits ici...
-};
-
-export const UNITES_PAR_PALETTE_DEFAUT = 50;
-
-export const calculerPalettes = (stock_actuel: number, code_produit: string): number => {
-  const unitesParPalette = PALETTES_CONFIG[code_produit] || UNITES_PAR_PALETTE_DEFAUT;
-  return Math.floor(stock_actuel / unitesParPalette);
-};
-*/
-
-// Puis importer dans le composant:
-// import { calculerPalettes, PALETTES_CONFIG, UNITES_PAR_PALETTE_DEFAUT } from '@/config/palettesConfig';

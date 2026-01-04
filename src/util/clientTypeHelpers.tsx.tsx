@@ -28,7 +28,7 @@ export const clientTypeConfig: Record<string, TypeConfig> = {
     bgColor: 'bg-purple-100',
     borderColor: 'border-purple-200'
   },
-  'SARL': {
+  'sarl': {
     icon: Building,
     color: 'text-indigo-800',
     bgColor: 'bg-indigo-100',
@@ -90,26 +90,31 @@ export const clientTypeConfig: Record<string, TypeConfig> = {
   }
 };
 
-// Fonction pour obtenir la config d'un type
-export const getTypeConfig = (type: string): TypeConfig => {
+// Fonction pour obtenir la config d'un type (avec protection contre undefined/null)
+export const getTypeConfig = (type?: string | null): TypeConfig => {
+  // Si type est undefined, null, ou vide, retourner la config par défaut
+  if (!type || typeof type !== 'string') {
+    return clientTypeConfig['default'];
+  }
+  
   const normalizedType = type.toLowerCase().trim();
   return clientTypeConfig[normalizedType] || clientTypeConfig['default'];
 };
 
 // Fonction pour obtenir l'icône d'un type
-export const getTypeIcon = (type: string): LucideIcon => {
+export const getTypeIcon = (type?: string | null): LucideIcon => {
   return getTypeConfig(type).icon;
 };
 
 // Fonction pour obtenir les classes CSS d'un type
-export const getTypeClasses = (type: string): string => {
+export const getTypeClasses = (type?: string | null): string => {
   const config = getTypeConfig(type);
   return `${config.bgColor} ${config.color} ${config.borderColor}`;
 };
 
 // Composant Badge avec icône pour un type de client
 interface ClientTypeBadgeProps {
-  type: string;
+  type?: string | null;
   showIcon?: boolean;
   className?: string;
 }
@@ -117,11 +122,12 @@ interface ClientTypeBadgeProps {
 export const ClientTypeBadge = ({ type, showIcon = true, className = "" }: ClientTypeBadgeProps) => {
   const config = getTypeConfig(type);
   const Icon = config.icon;
+  const displayType = type || 'Non défini';
   
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-sm font-medium ${getTypeClasses(type)} ${className}`}>
       {showIcon && <Icon className="h-3.5 w-3.5" />}
-      {type}
+      {displayType}
     </span>
   );
 };

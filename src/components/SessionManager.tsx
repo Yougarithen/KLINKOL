@@ -1,7 +1,8 @@
 // src/components/SessionManager.tsx
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-
+import { apiRequest } from '@/services/apiConfig';
+import { toast } from "sonner";
 interface SessionManagerProps {
   warningMinutes?: number;
   sessionDurationMinutes?: number;
@@ -13,8 +14,9 @@ interface SessionManagerProps {
  * IMPORTANT: Ce composant doit être placé dans App.tsx ou un Layout qui reste monté
  */
 export default function SessionManager({ 
-  warningMinutes = 5, 
-  sessionDurationMinutes = 60,
+  warningMinutes = 2,           // Notification à 8 minutes (10 - 2)
+  sessionDurationMinutes = 10,  // ✅ CORRECTION: 10 minutes au lieu de 100
+  
   debug = false
 }: SessionManagerProps) {
   const navigate = useNavigate();
@@ -124,23 +126,38 @@ export default function SessionManager({
     setShowWarning(false);
   };
 
-  const handleLogout = async () => {
-    log('Déconnexion manuelle');
+const handleLogout = async () => {
+    // Fermer la modale immédiatement
+    setShowLogoutModal(false);
+    
+    // Afficher le toast de chargement
+    toast.loading('Déconnexion en cours...');
+    
     try {
-      await fetch('http://192.168.1.160:3000/api/auth/logout', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('erp_auth_token')}`
-        }
+      // Appel API logout avec la configuration centralisée
+      await apiRequest('/auth/logout', {
+        method: 'POST'
+      }).catch(() => {
+        // Ignorer les erreurs réseau (serveur down, timeout, etc.)
+        console.log('API logout non disponible, déconnexion locale uniquement');
       });
     } catch (error) {
-      console.error('Erreur déconnexion:', error);
-    } finally {
-      localStorage.removeItem('erp_auth_token');
-      localStorage.removeItem('erp_user_data');
-      localStorage.removeItem('erp_session_expires');
-      navigate('/login', { replace: true });
+      console.log('Erreur API logout (non bloquant):', error);
     }
+    
+    // Toujours nettoyer le localStorage (même si l'API échoue)
+    localStorage.removeItem('erp_auth_token');
+    localStorage.removeItem('erp_user_data');
+    localStorage.removeItem('erp_session_expires');
+    
+    // Afficher le toast de succès
+    toast.dismiss();
+    toast.success('Déconnexion réussie. À bientôt !');
+    
+    // Rediriger vers login
+    setTimeout(() => {
+      navigate('/login', { replace: true });
+    }, 1000);
   };
 
   if (isLoginPage) return null;

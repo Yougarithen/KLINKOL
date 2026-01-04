@@ -19,10 +19,24 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/components/ui/alert";
-import { AlertCircle, CheckCircle2, Package, AlertTriangle } from "lucide-react";
+import { AlertCircle, CheckCircle2, Package, AlertTriangle, ArrowRightLeft } from "lucide-react";
 import produitService from "@/services/produitService";
 import productionService from "@/services/productionService";
 import recetteProductionService from "@/services/recetteProductionService";
+
+// Constante de conversion
+const SACS_PAR_PALETTE = 64;
+
+// FONCTION ULTRA-ROBUSTE DE FORMATAGE
+const formatQuantite = (value: any): string => {
+  try {
+    const num = Number(value);
+    if (!isFinite(num) || isNaN(num)) return "0";
+    return Number.isInteger(num) ? num.toString() : num.toFixed(2);
+  } catch {
+    return "0";
+  }
+};
 
 // Types
 interface Produit {
@@ -68,6 +82,8 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
   const [produitQuery, setProduitQuery] = useState("");
   const [verificationStock, setVerificationStock] = useState<VerificationStock | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [inputMode, setInputMode] = useState<"sacs" | "palettes">("sacs");
+  const [paletteValue, setPaletteValue] = useState<number>(0);
 
   const form = useForm<AddProductionFormData>({
     defaultValues: {
@@ -110,23 +126,14 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
 
     setIsVerifying(true);
     try {
-      // SOLUTION 1 : Si votre backend a la route /production/verifier-stock
-      // const response = await productionService.verifierStock(
-      //   selectedProduit.id_produit,
-      //   quantiteProduite
-      // );
-
-      // SOLUTION 2 : Utiliser recetteProductionService.verifierDisponibilite
       const response = await recetteProductionService.verifierDisponibilite(
         selectedProduit.id_produit,
         quantiteProduite
       );
 
       if (response.success) {
-        // Transformer les données du format recetteProductionService
         const data = response.data;
         
-        // Si votre backend retourne { disponible, matieres_manquantes }
         if ('disponible' in data) {
           const verif: VerificationStock = {
             possible: data.disponible,
@@ -134,7 +141,6 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
             matieres_manquantes: data.matieres_manquantes || []
           };
           
-          // Récupérer la recette complète pour avoir toutes les matières
           const recetteResponse = await recetteProductionService.getByProduit(selectedProduit.id_produit);
           if (recetteResponse.success) {
             recetteResponse.data.forEach((ingredient: any) => {
@@ -145,7 +151,7 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
                 verif.matieres_ok.push({
                   matiere: ingredient.matiere_nom,
                   necessaire: quantiteNecessaire,
-                  disponible: quantiteNecessaire, // Simplifié
+                  disponible: quantiteNecessaire,
                   unite: ingredient.matiere_unite
                 });
               }
@@ -154,15 +160,12 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
           
           setVerificationStock(verif);
         } else {
-          // Format déjà correct
           setVerificationStock(data);
         }
       }
     } catch (error: any) {
       console.error("Erreur lors de la vérification du stock:", error);
       setVerificationStock(null);
-      // Ne pas bloquer l'utilisateur, juste afficher un warning
-      console.warn("Vérification du stock impossible, la production sera quand même tentée");
     } finally {
       setIsVerifying(false);
     }
@@ -184,10 +187,35 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
     setVerificationStock(null);
   };
 
+  const handleModeChange = () => {
+    const newMode = inputMode === "sacs" ? "palettes" : "sacs";
+    setInputMode(newMode);
+    
+    if (newMode === "palettes") {
+      // Convertir sacs en palettes
+      const palettes = Number(quantiteProduite) / SACS_PAR_PALETTE;
+      setPaletteValue(palettes);
+    } else {
+      // Convertir palettes en sacs
+      const sacs = Number(paletteValue) * SACS_PAR_PALETTE;
+      form.setValue("quantite_produite", sacs);
+    }
+  };
+
+  const handlePaletteChange = (value: number) => {
+    setPaletteValue(value);
+    const sacs = value * SACS_PAR_PALETTE;
+    form.setValue("quantite_produite", sacs);
+  };
+
+  const handleSacChange = (value: number) => {
+    form.setValue("quantite_produite", value);
+    setPaletteValue(value / SACS_PAR_PALETTE);
+  };
+
   const handleSubmit = async (data: AddProductionFormData) => {
     if (isSubmitting) return;
 
-    // Vérifier que le stock est suffisant
     if (verificationStock && !verificationStock.possible) {
       setSubmitError("Stock insuffisant pour cette production");
       return;
@@ -199,7 +227,6 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
     try {
       console.log("Données envoyées au backend:", data);
 
-      // Utiliser produire() qui gère automatiquement la consommation des matières premières
       const response = await productionService.produire(
         data.id_produit,
         data.quantite_produite,
@@ -210,18 +237,25 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
       if (response.success) {
         console.log("Production créée avec succès:", response.data);
         
-        if (onSuccess) {
-          onSuccess();
-        }
-
-        // Réinitialiser le formulaire
-        form.reset();
+        form.reset({
+          id_produit: 0,
+          quantite_produite: 0,
+          operateur: "",
+          commentaire: "",
+        });
         setSelectedProduit(null);
         setProduitQuery("");
         setVerificationStock(null);
+        setPaletteValue(0);
+        
+        if (onSuccess) {
+          onSuccess();
+        }
+      } else {
+        setSubmitError(response.message || "Erreur lors de la création de la production");
       }
     } catch (error: any) {
-      console.error("Erreur lors de la création de la production:", error);
+      console.error("Erreur lors de la soumission:", error);
       setSubmitError(error.message || "Une erreur est survenue");
     } finally {
       setIsSubmitting(false);
@@ -229,20 +263,16 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
   };
 
   return (
-    <Card className="w-full border-slate-100">
-      <CardHeader className="pb-4">
-        <CardTitle className="text-2xl flex items-center gap-2">
-          <Package className="w-6 h-6" />
-          Ajouter un lot de production
-        </CardTitle>
+    <Card className="border-none shadow-none">
+      <CardHeader className="px-0">
+        <CardTitle className="text-xl">Informations de production</CardTitle>
         <CardDescription>
-          Enregistrez une nouvelle production et mettez à jour automatiquement les stocks
+          Remplissez les détails du lot de production
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-0">
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            {/* Message d'erreur */}
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
             {submitError && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -252,49 +282,40 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
             )}
 
             {/* Sélection du produit */}
-            <div>
-              <label className="text-sm font-medium mb-2 block">
-                Produit à fabriquer *
-              </label>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Produit à produire *</label>
               <Combobox value={selectedProduit} onChange={handleProduitChange}>
                 <div className="relative">
                   <Combobox.Input
-                    className="border border-slate-200 rounded-md px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onChange={(e) => setProduitQuery(e.target.value)}
-                    displayValue={(p: Produit | null) =>
-                      p ? `${p.code_produit} - ${p.nom}` : ""
-                    }
+                    className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                    displayValue={(produit: Produit | null) => produit?.nom || ""}
+                    onChange={(event) => setProduitQuery(event.target.value)}
                     placeholder="Rechercher un produit..."
                   />
-                  <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-slate-200 bg-white shadow-lg">
-                    {filteredProduits.length === 0 ? (
-                      <div className="p-3 text-gray-500">Aucun produit trouvé</div>
+                  <Combobox.Options className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-base shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none sm:text-sm">
+                    {filteredProduits.length === 0 && produitQuery !== "" ? (
+                      <div className="relative cursor-default select-none px-4 py-2 text-gray-700">
+                        Aucun produit trouvé.
+                      </div>
                     ) : (
-                      filteredProduits.map((p) => (
+                      filteredProduits.map((produit) => (
                         <Combobox.Option
-                          key={p.id_produit}
-                          value={p}
+                          key={produit.id_produit}
+                          value={produit}
                           className={({ active }) =>
-                            `cursor-pointer select-none p-3 ${
-                              active ? "bg-blue-500 text-white" : ""
+                            `relative cursor-pointer select-none py-2 pl-10 pr-4 ${
+                              active ? "bg-blue-600 text-white" : "text-gray-900"
                             }`
                           }
                         >
-                          {({ selected }) => (
-                            <div className="flex justify-between items-center">
-                              <div>
-                                <div className="font-medium">
-                                  {p.code_produit} - {p.nom}
-                                </div>
-                                <div className={`text-sm ${selected ? "text-blue-100" : "text-gray-500"}`}>
-                                  Stock actuel: {p.stock_actuel} {p.unite}
-                                </div>
-                              </div>
-                              {selected && (
-                                <CheckCircle2 className="w-5 h-5" />
-                              )}
-                            </div>
-                          )}
+                          <div>
+                            <span className="block truncate font-medium">
+                              {produit.nom}
+                            </span>
+                            <span className="block truncate text-sm opacity-70">
+                              Code: {produit.code_produit} | Stock: {formatQuantite(produit.stock_actuel)} {produit.unite}
+                            </span>
+                          </div>
                         </Combobox.Option>
                       ))
                     )}
@@ -302,50 +323,100 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
                 </div>
               </Combobox>
               {selectedProduit && (
-                <div className="mt-2 text-sm text-gray-600 bg-blue-50 p-3 rounded-md">
-                  <div className="flex items-center gap-2">
-                    <Package className="w-4 h-4 text-blue-600" />
-                    <span className="font-medium">Stock actuel:</span>
-                    <span>{selectedProduit.stock_actuel} {selectedProduit.unite}</span>
-                    {selectedProduit.poids && (
-                      <span className="text-gray-500">
-                        ({selectedProduit.poids} {selectedProduit.unite_poids}/{selectedProduit.unite})
-                      </span>
-                    )}
+                <p className="text-sm text-muted-foreground">
+                  Stock actuel: {formatQuantite(selectedProduit.stock_actuel)} {selectedProduit.unite}
+                </p>
+              )}
+            </div>
+
+            {/* Quantité à produire avec toggle sacs/palettes */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <FormLabel>Quantité à produire *</FormLabel>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleModeChange}
+                  className="flex items-center gap-2"
+                >
+                  <ArrowRightLeft className="h-4 w-4" />
+                  {inputMode === "sacs" ? "Saisir en palettes" : "Saisir en sacs"}
+                </Button>
+              </div>
+
+              {inputMode === "sacs" ? (
+                <FormField
+                  control={form.control}
+                  name="quantite_produite"
+                  rules={{
+                    required: "La quantité est requise",
+                    min: { value: 0.01, message: "La quantité doit être supérieure à 0" }
+                  }}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            step="1"
+                            placeholder="Ex: 64"
+                            {...field}
+                            onChange={(e) => handleSacChange(parseFloat(e.target.value) || 0)}
+                            className="pr-16"
+                          />
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                            SACS
+                          </span>
+                        </div>
+                      </FormControl>
+                      {quantiteProduite > 0 && (
+                        <FormDescription className="flex items-center gap-2">
+                          <Package className="h-4 w-4" />
+                          = {formatQuantite(Number(quantiteProduite) / SACS_PAR_PALETTE)} palette{(Number(quantiteProduite) / SACS_PAR_PALETTE) > 1 ? 's' : ''}
+                        </FormDescription>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="Ex: 1.5"
+                      value={paletteValue || ""}
+                      onChange={(e) => handlePaletteChange(parseFloat(e.target.value) || 0)}
+                      className="pr-20"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      PALETTES
+                    </span>
+                  </div>
+                  {paletteValue > 0 && (
+                    <p className="text-sm text-muted-foreground flex items-center gap-2">
+                      <Package className="h-4 w-4" />
+                      = {formatQuantite(quantiteProduite)} sac{Number(quantiteProduite) > 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {quantiteProduite > 0 && (
+                <div className="grid grid-cols-2 gap-4 p-3 bg-muted/50 rounded-lg">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Sacs</p>
+                    <p className="text-lg font-semibold">{formatQuantite(quantiteProduite)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Palettes</p>
+                    <p className="text-lg font-semibold">{formatQuantite(paletteValue)}</p>
                   </div>
                 </div>
               )}
             </div>
-
-            {/* Quantité à produire */}
-            <FormField
-              control={form.control}
-              name="quantite_produite"
-              rules={{
-                required: "La quantité est requise",
-                min: { value: 0.01, message: "La quantité doit être supérieure à 0" }
-              }}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Quantité à produire *</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      placeholder="Ex: 100"
-                      {...field}
-                      onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                    />
-                  </FormControl>
-                  {selectedProduit && (
-                    <FormDescription>
-                      Unité: {selectedProduit.unite}
-                    </FormDescription>
-                  )}
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
 
             {/* Vérification du stock */}
             {isVerifying && (
@@ -388,7 +459,7 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
                         <div>
                           <div className="font-medium">{m.matiere}</div>
                           <div className="text-sm text-gray-500">
-                            Nécessaire: {m.necessaire} {m.unite}
+                            Nécessaire: {formatQuantite(m.necessaire)} {m.unite}
                           </div>
                         </div>
                         <div className="text-right">
@@ -397,7 +468,7 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
                             Disponible
                           </div>
                           <div className="text-sm text-gray-500">
-                            Stock: {m.disponible} {m.unite}
+                            Stock: {formatQuantite(m.disponible)} {m.unite}
                           </div>
                         </div>
                       </div>
@@ -407,16 +478,16 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
                         <div>
                           <div className="font-medium text-red-900">{m.matiere}</div>
                           <div className="text-sm text-red-700">
-                            Nécessaire: {m.necessaire} {m.unite}
+                            Nécessaire: {formatQuantite(m.necessaire)} {m.unite}
                           </div>
                         </div>
                         <div className="text-right">
                           <div className="text-sm text-red-600 font-medium flex items-center gap-1">
                             <AlertTriangle className="w-4 h-4" />
-                            Manquant: {m.manquant} {m.unite}
+                            Manquant: {formatQuantite(m.manquant || 0)} {m.unite}
                           </div>
                           <div className="text-sm text-gray-500">
-                            Disponible: {m.disponible} {m.unite}
+                            Disponible: {formatQuantite(m.disponible)} {m.unite}
                           </div>
                         </div>
                       </div>
@@ -476,16 +547,18 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Quantité:</span>
-                    <span className="font-medium">{quantiteProduite} {selectedProduit.unite}</span>
+                    <span className="font-medium">
+                      {formatQuantite(quantiteProduite)} {selectedProduit.unite} ({formatQuantite(paletteValue)} PLT)
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-gray-600">Stock actuel:</span>
-                    <span>{selectedProduit.stock_actuel} {selectedProduit.unite}</span>
+                    <span>{formatQuantite(selectedProduit.stock_actuel)} {selectedProduit.unite}</span>
                   </div>
                   <div className="flex justify-between border-t border-blue-200 pt-1 mt-1">
                     <span className="text-gray-600">Nouveau stock:</span>
                     <span className="font-medium text-green-600">
-                      {(parseFloat(selectedProduit.stock_actuel.toString()) + parseFloat(quantiteProduite.toString())).toFixed(2)} {selectedProduit.unite}
+                      {formatQuantite(Number(selectedProduit.stock_actuel) + Number(quantiteProduite))} {selectedProduit.unite}
                     </span>
                   </div>
                 </div>
@@ -515,6 +588,7 @@ export function AddProductionForm({ onSuccess }: AddProductionFormProps) {
                   setProduitQuery("");
                   setVerificationStock(null);
                   setSubmitError(null);
+                  setPaletteValue(0);
                 }}
                 disabled={isSubmitting}
               >

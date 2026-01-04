@@ -7,10 +7,10 @@ import {
   Eye, 
   Phone, 
   MapPin, 
-  History, 
   Loader2,
   Users,
-  AlertCircle
+  AlertCircle,
+  FileText
 } from "lucide-react";
 import {
   Dialog,
@@ -21,11 +21,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import clientService from "@/services/clientService";
+import factureService from "@/services/factureService";
+import paiementService from "@/services/paiementService";
 import { toast } from "sonner";
 import { ClientDetailModal } from "@/components/detail/ClientDetailModal";
 import { AddClientForm } from "@/components/form/AddClientForm";
-import { HistoriqueDetailModal } from "@/components/detail/HistoriqueDetailModal";
 import { ClientTypeBadge, getTypeConfig } from "@/util/clientTypeHelpers.tsx";
+import { genererEtatCreancesTousClientsPDF, genererEtatCreancesClientPDF } from "@/util/creancepdfGenerator";
+import { DateRangeSelector } from "@/components/form/DateRangeSelector";
 
 /* =========================
    TYPES
@@ -46,6 +49,20 @@ interface ClientDisplay {
   numero_rc?: string;
   contact?: string;
   n_article?: string;
+}
+
+interface CreanceClient {
+  nom: string;
+  totalAchats: number;
+  totalPaye: number;
+  solde: number;
+  factures: {
+    numero_facture: string;
+    date_facture: string;
+    montant_ttc: number;
+    montant_paye: number;
+    montant_restant: number;
+  }[];
 }
 
 /* =========================
@@ -76,11 +93,17 @@ const Clients = () => {
   const [clients, setClients] = useState<ClientDisplay[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [generatingClientPDF, setGeneratingClientPDF] = useState<number | null>(null);
 
   const [selectedClient, setSelectedClient] = useState<ClientDisplay | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isHistoriqueModalOpen, setIsHistoriqueModalOpen] = useState(false);
+  
+  // États pour la sélection de période
+  const [isDateRangeDialogOpen, setIsDateRangeDialogOpen] = useState(false);
+  const [isClientDateRangeDialogOpen, setIsClientDateRangeDialogOpen] = useState(false);
+  const [clientForPDF, setClientForPDF] = useState<ClientDisplay | null>(null);
 
   /* =========================
      FETCH CLIENTS
@@ -90,7 +113,23 @@ const Clients = () => {
       setLoading(true);
       setError(null);
       const response = await clientService.getAll();
-      setClients(response.data.map(mapClientToDisplay));
+      
+      // ✅ Supprimer les doublons en se basant sur l'id_client
+      const clientsUniques = response.data.reduce((acc: any[], client: any) => {
+        // Vérifier si ce client existe déjà dans l'accumulateur
+        const existe = acc.find(c => c.id_client === client.id_client);
+        if (!existe) {
+          acc.push(client);
+        }
+        return acc;
+      }, []);
+      
+      setClients(clientsUniques.map(mapClientToDisplay));
+      
+      // ⚠️ Logger pour débogage si des doublons ont été trouvés
+      if (response.data.length !== clientsUniques.length) {
+        console.warn(`${response.data.length - clientsUniques.length} doublons détectés et supprimés`);
+      }
     } catch (err: any) {
       setError(err.message || "Erreur lors du chargement des clients");
       toast.error("Erreur lors du chargement des clients");
@@ -102,6 +141,224 @@ const Clients = () => {
   useEffect(() => {
     fetchClients();
   }, []);
+
+  /* =========================
+     GÉNÉRATION PDF CRÉANCES TOUS CLIENTS
+  ========================= */
+  const handleGenerateAllClientsReport = () => {
+    setIsDateRangeDialogOpen(true);
+  };
+
+  const genererEtatCreances = async (dateRange: { startDate: string; endDate: string; label: string }) => {
+    try {      toast.loading("Génération du PDF en cours...");
+      setGeneratingPDF(true);
+      setIsDateRangeDialogOpen(false);
+
+
+      const facturesResponse = await factureService.getAll();
+      const factures = facturesResponse.data;
+
+      const paiementsResponse = await paiementService.getAll();
+      const paiements = paiementsResponse.data;
+
+      // Filtrer les factures par date
+      const facturesFiltrees = factures.filter(f => {
+        if (!f.date_facture) return false;
+        const dateFacture = new Date(f.date_facture);
+        const debut = new Date(dateRange.startDate);
+        const fin = new Date(dateRange.endDate);
+        fin.setHours(23, 59, 59, 999); // Inclure toute la journée de fin
+        return dateFacture >= debut && dateFacture <= fin;
+      });
+
+      const creancesParClient: { [key: number]: CreanceClient } = {};
+
+      clients.forEach(client => {
+        const facturesClient = facturesFiltrees.filter(f => f.id_client === client.id_client);
+        
+        if (facturesClient.length === 0) return;
+
+        const totalAchats = facturesClient.reduce((sum, f) => {
+          const montant = parseFloat(String(f.montant_ttc || 0));
+          return sum + (isNaN(montant) ? 0 : montant);
+        }, 0);
+        
+        const totalPaye = facturesClient.reduce((sum, facture) => {
+          const paiementsFacture = paiements.filter(p => p.id_facture === facture.id_facture);
+          const montantPayeFacture = paiementsFacture.reduce((s, p) => {
+            const montant = parseFloat(String(p.montant_paye || 0));
+            return s + (isNaN(montant) ? 0 : montant);
+          }, 0);
+          return sum + montantPayeFacture;
+        }, 0);
+
+        const solde = totalAchats - totalPaye;
+
+        if (solde > 0) {
+          creancesParClient[client.id_client] = {
+            nom: client.nom,
+            totalAchats,
+            totalPaye,
+            solde,
+            factures: facturesClient
+              .filter(f => {
+                const paiementsFacture = paiements.filter(p => p.id_facture === f.id_facture);
+                const montantPayeFacture = paiementsFacture.reduce((s, p) => {
+                  const montant = parseFloat(String(p.montant_paye || 0));
+                  return s + (isNaN(montant) ? 0 : montant);
+                }, 0);
+                const montantTTC = parseFloat(String(f.montant_ttc || 0));
+                return (isNaN(montantTTC) ? 0 : montantTTC) - montantPayeFacture > 0;
+              })
+              .map(f => {
+                const paiementsFacture = paiements.filter(p => p.id_facture === f.id_facture);
+                const montantPayeFacture = paiementsFacture.reduce((s, p) => {
+                  const montant = parseFloat(String(p.montant_paye || 0));
+                  return s + (isNaN(montant) ? 0 : montant);
+                }, 0);
+                const montantTTC = parseFloat(String(f.montant_ttc || 0));
+                const montantTTCFinal = isNaN(montantTTC) ? 0 : montantTTC;
+                
+                return {
+                  numero_facture: f.numero_facture || 'N/A',
+                  date_facture: f.date_facture || new Date().toISOString(),
+                  montant_ttc: montantTTCFinal,
+                  montant_paye: montantPayeFacture,
+                  montant_restant: montantTTCFinal - montantPayeFacture
+                };
+              })
+          };
+        }
+      });
+
+      const creancesArray = Object.values(creancesParClient);
+
+      if (creancesArray.length === 0) {
+        toast.dismiss();
+        toast.info(`Aucune créance pour la période : ${dateRange.label}`);
+        return;
+      }
+
+      await genererEtatCreancesTousClientsPDF(creancesArray, dateRange.label);
+      
+      toast.dismiss();
+      toast.success("PDF généré avec succès !");
+    } catch (err: any) {
+      console.error("Erreur génération PDF:", err);
+      toast.dismiss();
+      toast.error("Erreur lors de la génération du PDF");
+    } finally {
+      setGeneratingPDF(false);
+    }
+  };
+
+  /* =========================
+     GÉNÉRATION PDF CRÉANCES CLIENT SPÉCIFIQUE
+  ========================= */
+  const handleGenerateClientReport = (client: ClientDisplay) => {
+    setClientForPDF(client);
+    setIsClientDateRangeDialogOpen(true);
+  };
+
+  const genererEtatCreancesClient = async (client: ClientDisplay, dateRange: { startDate: string; endDate: string; label: string }) => {
+    try {
+      setGeneratingClientPDF(client.id_client);
+      setIsClientDateRangeDialogOpen(false);
+      toast.loading(`Génération du PDF pour ${client.nom}...`);
+
+      const facturesResponse = await factureService.getAll();
+      const factures = facturesResponse.data.filter(f => f.id_client === client.id_client);
+
+      // Filtrer les factures par date
+      const facturesFiltrees = factures.filter(f => {
+        if (!f.date_facture) return false;
+        const dateFacture = new Date(f.date_facture);
+        const debut = new Date(dateRange.startDate);
+        const fin = new Date(dateRange.endDate);
+        fin.setHours(23, 59, 59, 999);
+        return dateFacture >= debut && dateFacture <= fin;
+      });
+
+      if (facturesFiltrees.length === 0) {
+        toast.dismiss();
+        toast.info(`Aucune facture pour ce client sur la période : ${dateRange.label}`);
+        return;
+      }
+
+      const paiementsResponse = await paiementService.getAll();
+      const paiements = paiementsResponse.data;
+
+      const totalAchats = facturesFiltrees.reduce((sum, f) => {
+        const montant = parseFloat(String(f.montant_ttc || 0));
+        return sum + (isNaN(montant) ? 0 : montant);
+      }, 0);
+      
+      const totalPaye = facturesFiltrees.reduce((sum, facture) => {
+        const paiementsFacture = paiements.filter(p => p.id_facture === facture.id_facture);
+        const montantPayeFacture = paiementsFacture.reduce((s, p) => {
+          const montant = parseFloat(String(p.montant_paye || 0));
+          return s + (isNaN(montant) ? 0 : montant);
+        }, 0);
+        return sum + montantPayeFacture;
+      }, 0);
+
+      const solde = totalAchats - totalPaye;
+
+      const creanceClient: CreanceClient = {
+        nom: client.nom,
+        totalAchats,
+        totalPaye,
+        solde,
+        factures: facturesFiltrees
+          .filter(f => {
+            const paiementsFacture = paiements.filter(p => p.id_facture === f.id_facture);
+            const montantPayeFacture = paiementsFacture.reduce((s, p) => {
+              const montant = parseFloat(String(p.montant_paye || 0));
+              return s + (isNaN(montant) ? 0 : montant);
+            }, 0);
+            const montantTTC = parseFloat(String(f.montant_ttc || 0));
+            return (isNaN(montantTTC) ? 0 : montantTTC) - montantPayeFacture > 0;
+          })
+          .map(f => {
+            const paiementsFacture = paiements.filter(p => p.id_facture === f.id_facture);
+            const montantPayeFacture = paiementsFacture.reduce((s, p) => {
+              const montant = parseFloat(String(p.montant_paye || 0));
+              return s + (isNaN(montant) ? 0 : montant);
+            }, 0);
+            const montantTTC = parseFloat(String(f.montant_ttc || 0));
+            const montantTTCFinal = isNaN(montantTTC) ? 0 : montantTTC;
+            
+            return {
+              numero_facture: f.numero_facture || 'N/A',
+              date_facture: f.date_facture || new Date().toISOString(),
+              montant_ttc: montantTTCFinal,
+              montant_paye: montantPayeFacture,
+              montant_restant: montantTTCFinal - montantPayeFacture
+            };
+          })
+      };
+
+      // Préparer les informations du client pour le PDF
+      const clientInfo = {
+        adresse: client.adresse,
+        telephone: client.telephone,
+        nif: client.nif,
+        numero_rc: client.numeroRc,
+        n_article: client.n_article
+      };
+
+      await genererEtatCreancesClientPDF(creanceClient, clientInfo, dateRange.label);
+      
+      toast.dismiss();
+      toast.success("PDF généré avec succès !");
+    } catch (err: any) {
+      console.error("Erreur génération PDF:", err);
+      toast.dismiss();
+      toast.error("Erreur lors de la génération du PDF");
+    } finally {
+      setGeneratingClientPDF(null);
+    }
+  };
 
   /* =========================
      HANDLE SUCCESS
@@ -174,13 +431,16 @@ const Clients = () => {
           <Button 
             variant="outline" 
             size="sm"
-            onClick={() => {
-              setSelectedClient(client);
-              setIsHistoriqueModalOpen(true);
-            }}
+            onClick={() => handleGenerateClientReport(client)}
+            disabled={generatingClientPDF === client.id_client}
+            className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
           >
-            <History className="h-4 w-4 mr-1" />
-            Historique
+            {generatingClientPDF === client.id_client ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4 mr-1" />
+            )}
+            Créances du client
           </Button>
         </div>
       ),
@@ -188,7 +448,7 @@ const Clients = () => {
   ];
 
   /* =========================
-     STATS CALCULATION (Dynamique)
+     STATS CALCULATION
   ========================= */
   const typeStats = clients.reduce((acc, client) => {
     const type = client.TypeC;
@@ -260,6 +520,21 @@ const Clients = () => {
             )}
             Actualiser
           </Button>
+
+          {/* BOUTON ÉTAT DES CRÉANCES GLOBAL */}
+          <Button
+            variant="outline"
+            onClick={handleGenerateAllClientsReport}
+            disabled={generatingPDF || clients.length === 0}
+            className="bg-orange-50 hover:bg-orange-100 border-orange-200 text-orange-700"
+          >
+            {generatingPDF ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <FileText className="h-4 w-4 mr-2" />
+            )}
+            État global des créances 
+          </Button>
           
           <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
             <DialogTrigger asChild>
@@ -325,6 +600,7 @@ const Clients = () => {
           columns={columns}
           searchPlaceholder="Rechercher un client..."
           searchKeys={["nom", "telephone", "adresse", "email", "numeroRc", "nif", "TypeC"]}
+          rowKey={(row: ClientDisplay) => row.id}
         />
       )}
 
@@ -344,15 +620,35 @@ const Clients = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Modal Historique Client */}
-      <Dialog open={isHistoriqueModalOpen} onOpenChange={setIsHistoriqueModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          {selectedClient && (
-            <HistoriqueDetailModal 
-              clientId={selectedClient.id_client}
-              clientNom={selectedClient.nom}
-            />
-          )}
+      {/* Dialogue Sélection Période - Tous les clients */}
+      <Dialog open={isDateRangeDialogOpen} onOpenChange={setIsDateRangeDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sélectionner la période</DialogTitle>
+            <DialogDescription>
+              Choisissez la période pour l'état des créances de tous les clients
+            </DialogDescription>
+          </DialogHeader>
+          <DateRangeSelector
+            onConfirm={genererEtatCreances}
+            onCancel={() => setIsDateRangeDialogOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialogue Sélection Période - Client spécifique */}
+      <Dialog open={isClientDateRangeDialogOpen} onOpenChange={setIsClientDateRangeDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sélectionner la période</DialogTitle>
+            <DialogDescription>
+              Choisissez la période pour l'état des créances de {clientForPDF?.nom}
+            </DialogDescription>
+          </DialogHeader>
+          <DateRangeSelector
+            onConfirm={(dateRange) => clientForPDF && genererEtatCreancesClient(clientForPDF, dateRange)}
+            onCancel={() => setIsClientDateRangeDialogOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </MainLayout>

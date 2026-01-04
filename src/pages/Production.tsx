@@ -5,6 +5,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AddProductionForm } from "@/components/form/AddProductionForm";
+import { DateRangeSelector } from "@/components/form/DateRangeSelector";
 import {
   Dialog,
   DialogContent,
@@ -21,9 +22,15 @@ import {
   Loader2, 
   AlertCircle,
   CalendarDays,
-  CalendarRange
+  CalendarRange,
+  Archive,
+  FileText
 } from "lucide-react";
 import productionService from "@/services/productionService";
+import recetteProductionService from "@/services/recetteProductionService";
+import matierePremiereService from "@/services/matierePremiereService";
+import { genererEtatProductionsPDF, genererEtatProductionUniquePDF } from "@/util/productionPdfGenerator";
+import { toast } from "sonner";
 
 // Type correspondant au backend
 interface ProductionRecord {
@@ -40,71 +47,19 @@ interface ProductionRecord {
 
 type PeriodFilter = "all" | "today" | "week" | "month" | "quarter";
 
-const columns = [
-  {
-    key: "date_production",
-    header: "Date",
-    render: (prod: ProductionRecord) => (
-      <div className="flex items-center gap-2">
-        <Calendar className="h-4 w-4 text-muted-foreground" />
-        <span>{new Date(prod.date_production).toLocaleDateString("fr-FR")}</span>
-      </div>
-    ),
-  },
-  {
-    key: "id_production",
-    header: "N° Production",
-    render: (prod: ProductionRecord) => (
-      <span className="font-mono text-sm bg-muted px-2 py-1 rounded">
-        PROD-{String(prod.id_production).padStart(4, '0')}
-      </span>
-    ),
-  },
-  {
-    key: "produit_nom",
-    header: "Produit",
-    render: (prod: ProductionRecord) => (
-      <div>
-        <p className="font-medium text-foreground">{prod.produit_nom}</p>
-        {prod.commentaire && (
-          <p className="text-xs text-muted-foreground">
-            {prod.commentaire}
-          </p>
-        )}
-      </div>
-    ),
-  },
-  {
-    key: "quantite_produite",
-    header: "Quantité",
-    render: (prod: ProductionRecord) => (
-      <div className="flex items-center gap-2">
-        <Factory className="h-4 w-4 text-muted-foreground" />
-        <span className="font-semibold">
-          {prod.quantite_produite.toLocaleString()} {prod.unite}
-        </span>
-      </div>
-    ),
-  },
-  {
-    key: "operateur",
-    header: "Opérateur",
-    render: (prod: ProductionRecord) => (
-      <span className="text-sm text-muted-foreground">
-        {prod.operateur || "-"}
-      </span>
-    ),
-  },
-  {
-    key: "actions",
-    header: "Actions",
-    render: (prod: ProductionRecord) => (
-      <Button variant="outline" size="sm">
-        Détails
-      </Button>
-    ),
-  },
-];
+// FONCTION ULTRA-ROBUSTE DE FORMATAGE
+const formatQuantite = (value: any): string => {
+  try {
+    const num = Number(value);
+    if (!isFinite(num) || isNaN(num)) return "0";
+    return Number.isInteger(num) ? num.toString() : num.toFixed(2);
+  } catch {
+    return "0";
+  }
+};
+
+// Constante pour la conversion palette
+const SACS_PAR_PALETTE = 64;
 
 const Production = () => {
   const [allProductions, setAllProductions] = useState<ProductionRecord[]>([]);
@@ -113,6 +68,11 @@ const Production = () => {
   const [error, setError] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>("all");
+  const [isEtatDialogOpen, setIsEtatDialogOpen] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
+  const [isSingleProductionDialogOpen, setIsSingleProductionDialogOpen] = useState(false);
+  const [selectedProductionForPDF, setSelectedProductionForPDF] = useState<ProductionRecord | null>(null);
+  const [generatingSinglePDF, setGeneratingSinglePDF] = useState<number | null>(null);
 
   useEffect(() => {
     fetchProductions();
@@ -194,9 +154,227 @@ const Production = () => {
     setPeriodFilter(filter);
   };
 
-  // Calculer les statistiques sur TOUTES les productions (pas filtrées)
+  const handleGenerateEtatProductions = async (dateRange: { startDate: string; endDate: string; label: string }) => {
+    try {
+      setIsGeneratingPDF(true);
+      setIsEtatDialogOpen(false);
+      toast.loading("Génération du PDF en cours...");
+
+      // Filtrer les productions selon la plage de dates
+      const productionsFiltrees = allProductions.filter(p => {
+        const prodDate = new Date(p.date_production);
+        const start = new Date(dateRange.startDate);
+        const end = new Date(dateRange.endDate);
+        return prodDate >= start && prodDate <= end;
+      });
+
+      if (productionsFiltrees.length === 0) {
+        toast.dismiss();
+        toast.info(`Aucune production trouvée pour la période : ${dateRange.label}`);
+        setIsGeneratingPDF(false);
+        return;
+      }
+
+      // Récupérer toutes les matières premières pour avoir les stocks actuels
+      const matieresResponse = await matierePremiereService.getAll();
+      const toutesLesMatieres = matieresResponse.data;
+
+      // Créer un Map pour accès rapide au stock par nom de matière
+      const stockMap = new Map(
+        toutesLesMatieres.map((m: any) => [m.nom, m.stock_actuel])
+      );
+
+      // Calculer les matières premières utilisées
+      const matieresUtiliseesMap = new Map<string, { nom_matiere: string; quantite_totale: number; unite: string; stock_actuel: number }>();
+
+      for (const prod of productionsFiltrees) {
+        try {
+          const recetteResponse = await recetteProductionService.getByProduit(prod.id_produit);
+          const recette = recetteResponse.data;
+
+          recette.forEach((ingredient: any) => {
+            const quantiteNecessaire = ingredient.quantite_necessaire * prod.quantite_produite;
+            const key = ingredient.matiere_nom;
+            const stockActuel = stockMap.get(key) || 0;
+
+            if (matieresUtiliseesMap.has(key)) {
+              const existing = matieresUtiliseesMap.get(key)!;
+              existing.quantite_totale += quantiteNecessaire;
+            } else {
+              matieresUtiliseesMap.set(key, {
+                nom_matiere: ingredient.matiere_nom,
+                quantite_totale: quantiteNecessaire,
+                unite: ingredient.matiere_unite,
+                stock_actuel: stockActuel
+              });
+            }
+          });
+        } catch (err) {
+          console.warn(`Impossible de récupérer la recette pour le produit ${prod.id_produit}`);
+        }
+      }
+
+      const matieresUtilisees = Array.from(matieresUtiliseesMap.values());
+
+      // Générer le PDF
+      await genererEtatProductionsPDF(productionsFiltrees, matieresUtilisees, dateRange.label);
+      
+      toast.dismiss();
+      toast.success("PDF généré avec succès !");
+
+    } catch (error) {
+      console.error("Erreur lors de la génération du PDF:", error);
+      toast.dismiss();
+      toast.error("Erreur lors de la génération du PDF");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+  const handleGenerateSingleProductionReport = (production: ProductionRecord) => {
+    setSelectedProductionForPDF(production);
+    setIsSingleProductionDialogOpen(true);
+  };
+
+  const handleGenerateSingleProduction = async (dateRange: { startDate: string; endDate: string; label: string }) => {
+    if (!selectedProductionForPDF) return;
+
+    try {
+      setGeneratingSinglePDF(selectedProductionForPDF.id_production);
+      setIsSingleProductionDialogOpen(false);
+      toast.loading(`Génération du PDF pour ${selectedProductionForPDF.produit_nom}...`);
+
+      // Récupérer toutes les matières premières pour avoir les stocks actuels
+      const matieresResponse = await matierePremiereService.getAll();
+      const toutesLesMatieres = matieresResponse.data;
+
+      // Créer un Map pour accès rapide au stock par nom de matière
+      const stockMap = new Map(
+        toutesLesMatieres.map((m: any) => [m.nom, m.stock_actuel])
+      );
+
+      // Récupérer la recette du produit
+      const recetteResponse = await recetteProductionService.getByProduit(selectedProductionForPDF.id_produit);
+      const recette = recetteResponse.data;
+
+      // Calculer les matières premières utilisées pour cette production
+      const matieresUtilisees = recette.map((ingredient: any) => {
+        const quantiteNecessaire = ingredient.quantite_necessaire * selectedProductionForPDF.quantite_produite;
+        return {
+          nom_matiere: ingredient.matiere_nom,
+          quantite_totale: quantiteNecessaire,
+          unite: ingredient.matiere_unite,
+          stock_actuel: stockMap.get(ingredient.matiere_nom) || 0
+        };
+      });
+
+      // Générer le PDF avec une seule production
+      await genererEtatProductionUniquePDF([selectedProductionForPDF], matieresUtilisees, dateRange.label);
+      
+      toast.dismiss();
+      toast.success("PDF généré avec succès !");
+
+    } catch (error) {
+      console.error("Erreur lors de la génération du PDF:", error);
+      toast.dismiss();
+      toast.error("Erreur lors de la génération du PDF");
+    } finally {
+      setGeneratingSinglePDF(null);
+    }
+  };
+
+  // Définition des colonnes APRÈS toutes les fonctions
+  const columns = [
+    {
+      key: "date_production",
+      header: "Date",
+      render: (prod: ProductionRecord) => (
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <span>{new Date(prod.date_production).toLocaleDateString("fr-FR")}</span>
+        </div>
+      ),
+    },
+    {
+      key: "id_production",
+      header: "N° Production",
+      render: (prod: ProductionRecord) => (
+        <span className="font-mono text-sm bg-muted px-2 py-1 rounded">
+          PROD-{String(prod.id_production).padStart(4, '0')}
+        </span>
+      ),
+    },
+    {
+      key: "produit_nom",
+      header: "Produit",
+      render: (prod: ProductionRecord) => (
+        <div>
+          <p className="font-medium text-foreground">{prod.produit_nom}</p>
+          {prod.commentaire && (
+            <p className="text-xs text-muted-foreground">
+              {prod.commentaire}
+            </p>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: "palettes",
+      header: "Palettes / Quantité",
+      render: (prod: ProductionRecord) => {
+        const palettes = Number(prod.quantite_produite) / SACS_PAR_PALETTE;
+        return (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <Archive className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium text-primary">
+                {formatQuantite(palettes)} Palette
+              </span>
+            </div>
+            <div className="flex items-center gap-2 pl-6">
+              <Factory className="h-3 w-3 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">
+                {formatQuantite(prod.quantite_produite)} {prod.unite}
+              </span>
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: "operateur",
+      header: "Opérateur",
+      render: (prod: ProductionRecord) => (
+        <span className="text-sm text-muted-foreground">
+          {prod.operateur || "-"}
+        </span>
+      ),
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      render: (prod: ProductionRecord) => (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => handleGenerateSingleProductionReport(prod)}
+          disabled={generatingSinglePDF === prod.id_production}
+          className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
+        >
+          {generatingSinglePDF === prod.id_production ? (
+            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+          ) : (
+            <FileText className="h-4 w-4 mr-1" />
+          )}
+          État Production
+        </Button>
+      ),
+    },
+  ];
+
+  // Calculer les statistiques
   const productionTotal = allProductions.reduce(
-    (acc, p) => acc + p.quantite_produite, 
+    (acc, p) => acc + Number(p.quantite_produite), 
     0
   );
 
@@ -207,20 +385,17 @@ const Production = () => {
   
   const productionSemaine = allProductions
     .filter(p => new Date(p.date_production) >= debutSemaine)
-    .reduce((acc, p) => acc + p.quantite_produite, 0);
+    .reduce((acc, p) => acc + Number(p.quantite_produite), 0);
 
   // Productions d'aujourd'hui
   const aujourdhui = new Date().toISOString().split('T')[0];
   const productionAujourdhui = allProductions
     .filter(p => p.date_production.split('T')[0] === aujourdhui)
-    .reduce((acc, p) => acc + p.quantite_produite, 0);
+    .reduce((acc, p) => acc + Number(p.quantite_produite), 0);
 
-  // Nombre de lots affichés (filtrés)
   const nombreLots = displayedProductions.length;
-
-  // Production totale des lots affichés (filtrés)
   const productionTotaleFiltree = displayedProductions.reduce(
-    (acc, p) => acc + p.quantite_produite, 
+    (acc, p) => acc + Number(p.quantite_produite), 
     0
   );
 
@@ -289,6 +464,32 @@ const Production = () => {
             )}
             Actualiser
           </Button>
+
+          <Dialog open={isEtatDialogOpen} onOpenChange={setIsEtatDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" disabled={isGeneratingPDF}            className="bg-orange-50 hover:bg-orange-100 border-orange-200 text-orange-700">
+
+                {isGeneratingPDF ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4 mr-2" />
+                )}
+                État global des productions
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Générer l'état des productions</DialogTitle>
+                <DialogDescription>
+                  Sélectionnez une période pour générer le rapport PDF
+                </DialogDescription>
+              </DialogHeader>
+              <DateRangeSelector
+                onConfirm={handleGenerateEtatProductions}
+                onCancel={() => setIsEtatDialogOpen(false)}
+              />
+            </DialogContent>
+          </Dialog>
           
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -310,18 +511,18 @@ const Production = () => {
         </div>
       </div>
 
-      {/* Stats - Basées sur TOUTES les productions */}
+      {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-4 mb-8">
         <div className="stat-card">
           <p className="text-sm text-muted-foreground">Production Aujourd'hui</p>
           <p className="text-2xl font-bold text-primary">
-            {productionAujourdhui.toLocaleString()}
+            {formatQuantite(productionAujourdhui)}
           </p>
         </div>
         <div className="stat-card">
           <p className="text-sm text-muted-foreground">Production Semaine</p>
           <p className="text-2xl font-bold text-info">
-            {productionSemaine.toLocaleString()}
+            {formatQuantite(productionSemaine)}
           </p>
         </div>
         <div className="stat-card">
@@ -338,8 +539,8 @@ const Production = () => {
           </p>
           <p className="text-2xl font-bold text-foreground">
             {periodFilter === "all" 
-              ? productionTotal.toLocaleString()
-              : productionTotaleFiltree.toLocaleString()
+              ? formatQuantite(productionTotal)
+              : formatQuantite(productionTotaleFiltree)
             }
           </p>
         </div>
@@ -402,6 +603,22 @@ const Production = () => {
           searchKey="produit_nom"
         />
       )}
+
+      {/* Dialogue Sélection Période - Production unique */}
+      <Dialog open={isSingleProductionDialogOpen} onOpenChange={setIsSingleProductionDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Sélectionner la période</DialogTitle>
+            <DialogDescription>
+              Générer l'état de production pour {selectedProductionForPDF?.produit_nom}
+            </DialogDescription>
+          </DialogHeader>
+          <DateRangeSelector
+            onConfirm={handleGenerateSingleProduction}
+            onCancel={() => setIsSingleProductionDialogOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 };

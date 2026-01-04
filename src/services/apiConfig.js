@@ -1,7 +1,7 @@
 // src/services/apiConfig.js
 // Configuration centrale de l'API avec gestion du token JWT
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://192.168.1.160:3000/api';
+const API_BASE_URL = 'https://ftest-production.up.railway.app/api';
 const TOKEN_KEY = 'erp_auth_token';
 
 /**
